@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+from dataclasses import dataclass, field
+
+import nir
+import numpy as np
+
+from ._base import NodeInfo
+
+__all__ = ["LIInfo", "parse_li"]
+
+_D_SCALE = 12
+
+
+@dataclass
+class LIInfo(NodeInfo):
+    name: str
+    size: int
+    decay: float
+    decay_scaled: int | None = field(default=None, init=False)
+
+    # ── classification traits ─────────────────────────────────────────────────
+
+    @property
+    def is_neuron(self) -> bool:
+        return True
+
+    # ── neuron traits ─────────────────────────────────────────────────────────
+
+    @property
+    def state_size(self) -> int:
+        return self.size
+
+    @property
+    def state_names(self) -> list[str]:
+        return ["voltage"]
+
+    @property
+    def state_size_define(self) -> str:
+        return f"L{self.name}_LI_SIZE"
+
+    @property
+    def d_scale(self) -> int:
+        return _D_SCALE
+
+    def output_element_type(self, quantize: bool) -> str:
+        return "i32" if quantize else "f32"
+
+    # ── quantization ──────────────────────────────────────────────────────────
+
+    def quantize(self) -> None:
+        self.decay_scaled = round(self.decay * (1 << _D_SCALE))
+
+    # ── MLIR function arg contributions ──────────────────────────────────────
+
+    def state_func_args(self, quantize: bool) -> list[tuple[str, str]]:
+        t = "i32" if quantize else "f32"
+        return [(f"%voltage_{self.name}", f"memref<{self.size}x{t}>")]
+
+    # ── MLIR body emission ────────────────────────────────────────────────────
+
+    def emit_mlir(
+        self,
+        input_var: str,
+        is_last: bool,
+        quantize: bool,
+    ) -> tuple[list[str], str]:
+        out_var = "%output" if is_last else f"%voltage_out_{self.name}"
+        alloca = not is_last
+        if quantize:
+            lines = _emit_li_int(self, input_var, f"%voltage_{self.name}", out_var, alloca)
+        else:
+            lines = _emit_li_float(self, input_var, f"%voltage_{self.name}", out_var, alloca)
+        return lines, out_var
+
+
+def parse_li(node: nir.LI, name: str) -> LIInfo:
+    if np.unique(node.v_leak).size != 1:
+        raise ValueError("v_leak must be uniform across all LI neurons")
+    coupling = float(node.r[0] * node.w_in[0])
+    if not np.isclose(coupling, 1.0):
+        raise ValueError(
+            f"LI coupling r*w_in={coupling:.4f} must be ≈ 1.0 (non-unit coupling not supported)",
+        )
+    return LIInfo(
+        name=name,
+        size=int(node.input_type["input"][0]),
+        decay=float(node.v_leak[0]),
+    )
+
+
+# ── MLIR emission helpers ──────────────────────────────────────────────────────
+
+
+def _emit_li_float(
+    info: LIInfo,
+    input_var: str,
+    voltage_var: str,
+    output_var: str,
+    alloca_output: bool,
+) -> list[str]:
+    n = info.size
+    lines = ["", f"    // --- LI {info.name}: ({n}) neurons ---"]
+    if alloca_output:
+        lines.append(f"    {output_var} = memref.alloca() : memref<{n}xf32>")
+    lines.append(
+        f"    snn.li ins({input_var}) state({voltage_var}) out({output_var})"
+        f" {{decay_float = {info.decay:.10e} : f64}}"
+        f" : memref<{n}xf32>, memref<{n}xf32>"
+        f" -> memref<{n}xf32>",
+    )
+    return lines
+
+
+def _emit_li_int(
+    info: LIInfo,
+    input_var: str,
+    voltage_var: str,
+    output_var: str,
+    alloca_output: bool,
+) -> list[str]:
+    n = info.size
+    lines = ["", f"    // --- LI {info.name}: ({n}) neurons, Q{_D_SCALE} ---"]
+    if alloca_output:
+        lines.append(f"    {output_var} = memref.alloca() : memref<{n}xi32>")
+    lines.append(
+        f"    snn.li ins({input_var}) state({voltage_var}) out({output_var})"
+        f" {{d_scale = {_D_SCALE} : i64,"
+        f" decay_int = {info.decay_scaled} : i64}}"
+        f" : memref<{n}xi32>, memref<{n}xi32>"
+        f" -> memref<{n}xi32>",
+    )
+    return lines

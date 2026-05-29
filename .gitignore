@@ -1,0 +1,39 @@
+# Build directories
+build/
+out/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CPackConfig.cmake
+CPackSourceConfig.cmake
+compile_commands.json
+
+# Ninja
+build.ninja
+.ninja_deps
+.ninja_log
+
+# TableGen generated files
+*.inc
+
+# Binaries
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
