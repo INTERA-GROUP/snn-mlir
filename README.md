@@ -1,5 +1,7 @@
 # SNN Dialect for MLIR
 
+[![CI](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml/badge.svg)](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml)
+
 An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Networks (SNNs), compatible with the [NIR (Neuromorphic Intermediate Representation)](https://neuroir.org/) standard.
 
 The dialect provides type-polymorphic operations that work with both `f32` (float) and quantized (`i8`/`i32`) types, enabling a single IR to target both simulation and hardware-optimized deployments. A reference CPU lowering (`SNNToLinalg`) converts SNN ops to standard `linalg`/`arith` operations that any MLIR-based backend can consume.
