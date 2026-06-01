@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: verify each SNN dialect op parses and round-trips correctly in isolation.
 // RUN: %snn-opt %s | %FileCheck %s
 

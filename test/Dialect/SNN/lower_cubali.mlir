@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: snn.cubali lowers to two-decay dynamics with continuous voltage output.
 // No threshold comparison or spike selection should appear.
 // RUN: %snn-opt --convert-snn-to-linalg %s | %FileCheck %s

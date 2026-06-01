@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 # SNN dialect → LLVM IR (.ll) on x86_64 Linux.
 # Pipe all MLIR passes inline; no intermediate files.
 #

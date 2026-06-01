@@ -1,3 +1,5 @@
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 if(LLVM_EXTERNAL_LIT AND FILECHECK_EXE)
   configure_lit_site_cfg(
     ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in

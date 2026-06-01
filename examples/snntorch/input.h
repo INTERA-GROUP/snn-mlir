@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #ifndef INPUT_H
 #define INPUT_H
 

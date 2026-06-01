@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //===------------------------------ SNN op declarations --------------------------*- C++ -*-===//
 #ifndef SNN_OPS_H
 #define SNN_OPS_H

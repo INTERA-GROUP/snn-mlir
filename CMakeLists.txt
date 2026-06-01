@@ -1,3 +1,5 @@
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 cmake_minimum_required(VERSION 3.20.0)
 project(snn-dialect LANGUAGES CXX C)
 

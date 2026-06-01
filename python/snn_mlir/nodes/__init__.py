@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 from ._base import NodeInfo
 from ._registry import NODE_PARSERS
 from ._rescale import RescaleInfo

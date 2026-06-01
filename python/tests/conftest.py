@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Fixtures: synthetic NIR graphs. No file I/O, no snn-opt needed for unit tests."""
 
 import nir

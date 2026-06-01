@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: the float lowering is type-polymorphic over FloatType width.
 // The neuron lowerings derive their element type from the operand memref, so
 // f64 / f16 networks lower to f64 / f16 arithmetic — not hardcoded f32.

@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: op verifiers reject malformed IR with a clear diagnostic.
 // Float mode must be type-uniform; quantized mode is locked to the i8/i32
 // contract that the quantizer and downstream backends depend on.

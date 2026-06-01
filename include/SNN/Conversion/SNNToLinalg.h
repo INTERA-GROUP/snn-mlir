@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //===------ SNNToLinalg.h - SNN to Linalg conversion --------===//
 #ifndef SNN_CONVERSION_SNNTOLINALG_H
 #define SNN_CONVERSION_SNNTOLINALG_H

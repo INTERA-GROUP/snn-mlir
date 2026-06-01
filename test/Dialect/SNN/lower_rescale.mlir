@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: snn.rescale lowers to a linalg.generic with the correct shift direction.
 // RUN: %snn-opt --convert-snn-to-linalg %s | %FileCheck %s
 

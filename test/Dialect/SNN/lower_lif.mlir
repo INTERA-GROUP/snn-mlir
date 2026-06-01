@@ -1,3 +1,5 @@
+// Copyright 2026 Sensing & Control Systems, S.L.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: snn.lif lowers to single-state dynamics with threshold and spike output.
 // Threshold comparison uses strict greater-than (cmpf ogt / cmpi sgt), matching
 // snntorch's fire() semantics (S=1 iff U > U_thr).

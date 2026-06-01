@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Sensing & Control Systems, S.L.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """Export the SNN Oxford NIR model to MLIR + C runtime files.
 
 Network: Linear(200→256) → CubaLIF(256) → Linear(256→200) → CubaLIF(200)
