@@ -1,6 +1,7 @@
 # Build directories
 build/
 out/
+site/
 
 # CMake generated
 CMakeCache.txt

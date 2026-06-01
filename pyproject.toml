@@ -24,6 +24,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.4",
 ]
+docs = [
+    "mkdocs-material>=9.7.6",
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
