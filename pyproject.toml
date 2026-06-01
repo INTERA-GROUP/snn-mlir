@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "snn-mlir"
 version = "0.2.0a0"
-description = "Python NIR bridge for the snn-dialect MLIR package"
+description = "Python NIR bridge for the snn-mlir MLIR dialect"
 readme = "README.md"
 license = { text = "Apache-2.0 WITH LLVM-exception" }
 requires-python = ">=3.10"

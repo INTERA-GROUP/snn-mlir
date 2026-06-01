@@ -13,8 +13,8 @@ A companion Python package (`snn-mlir`) reads any NIR file and generates SNN dia
 ## Quick start
 
 ```bash
-git clone <this-repo> snn-dialect
-cd snn-dialect
+git clone <this-repo> snn-mlir
+cd snn-mlir
 uv sync                          # install Python env (requires uv)
 uv run python examples/snn_oxford/run.py --quantize
 ```
@@ -382,11 +382,11 @@ ninja -C build check-snn
 Add this repo as a subdirectory (or git submodule) and consume the CMake targets:
 
 ```cmake
-add_subdirectory(third_party/snn-dialect)
+add_subdirectory(third_party/snn-mlir)
 
 target_include_directories(MyPass PRIVATE
-  ${CMAKE_SOURCE_DIR}/third_party/snn-dialect/include
-  ${CMAKE_BINARY_DIR}/third_party/snn-dialect/include
+  ${CMAKE_SOURCE_DIR}/third_party/snn-mlir/include
+  ${CMAKE_BINARY_DIR}/third_party/snn-mlir/include
 )
 
 target_link_libraries(MyPass
