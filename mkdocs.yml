@@ -1,7 +1,7 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-site_name: snn-mlir
-site_description: An out-of-tree MLIR dialect and NIR compiler for Spiking Neural Networks
+site_name: SNN-MLIR
+site_description: An MLIR Dialect for Compiling Neuromorphic SNNs from NIR to Bare-Metal C
 site_url: https://snn-mlir.readthedocs.io/
 repo_url: https://github.com/INTERA-GROUP/snn-mlir
 repo_name: INTERA-GROUP/snn-mlir
@@ -12,15 +12,13 @@ theme:
   logo: assets/logo.png
   favicon: assets/logo.png
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
+    - scheme: default
       primary: indigo
       accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
+    - scheme: slate
       primary: indigo
       accent: indigo
       toggle:

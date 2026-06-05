@@ -1,4 +1,8 @@
-# snn-mlir
+# SNN-MLIR
+
+[![CI](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml/badge.svg)](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml)
+[![Documentation Status](https://readthedocs.org/projects/snn-mlir/badge/?version=latest)](https://snn-mlir.readthedocs.io/en/latest/)
+[![Collaboration Network](https://img.shields.io/badge/Collaboration_Network-Open_Neuromorphic-blue)](https://open-neuromorphic.org/)
 
 An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Networks (SNNs),
 compatible with the [NIR (Neuromorphic Intermediate Representation)](https://neuroir.org/) standard.
@@ -11,7 +15,7 @@ standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 A companion Python package (`snn-mlir`) reads any NIR file and generates SNN dialect MLIR
 ready to compile and run on any C-capable target.
 
-![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](snn-mlir-flow.png)
+![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](snn-mlir_flow.png)
 
 ---
 
@@ -58,6 +62,22 @@ We're happy to help. Reach out to the maintainers any time:
 
 - **Alex G. Gener** — [alejandro.garcia@intera-group.com](mailto:alejandro.garcia@intera-group.com)
 - **Alvaro Rollon** — [alvaro.rollon@intera-group.com](mailto:alvaro.rollon@intera-group.com)
+
+## Citation
+
+A companion paper describing snn-mlir is currently under submission to arXiv. This section will be updated with the full reference once the preprint is available.
+
+In the meantime, if you use snn-mlir in your research, please cite the repository directly:
+
+```bibtex
+@software{snn_mlir,
+  author  = {N Vision Systems And Technologies SL},
+  title   = {{snn-mlir}: An MLIR Dialect for Spiking Neural Networks},
+  year    = {2026},
+  url     = {https://github.com/INTERA-GROUP/snn-mlir},
+  version = {0.1.0},
+}
+```
 
 ## License
 
