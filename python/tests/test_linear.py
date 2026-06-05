@@ -1,4 +1,4 @@
-# Copyright 2026 Sensing & Control Systems, S.L.
+# Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 def test_float_mlir_contains_snn_linear(linear_float):
     lines, out_var = linear_float.emit_mlir("%input", False, False)

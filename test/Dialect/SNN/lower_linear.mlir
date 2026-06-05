@@ -1,4 +1,4 @@
-// Copyright 2026 Sensing & Control Systems, S.L.
+// Copyright 2026 N Vision Systems And Technologies SL
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: snn.linear lowers correctly to linalg/arith ops.
 // RUN: %snn-opt --convert-snn-to-linalg %s | %FileCheck %s

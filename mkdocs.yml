@@ -1,11 +1,11 @@
-# Copyright 2026 Sensing & Control Systems, S.L.
+# Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 site_name: snn-mlir
 site_description: An out-of-tree MLIR dialect and NIR compiler for Spiking Neural Networks
 site_url: https://snn-mlir.readthedocs.io/
 repo_url: https://github.com/INTERA-GROUP/snn-mlir
 repo_name: INTERA-GROUP/snn-mlir
-copyright: Copyright &copy; 2026 Sensing &amp; Control Systems, S.L.
+copyright: Copyright &copy; 2026 N Vision Systems And Technologies SL
 
 theme:
   name: material

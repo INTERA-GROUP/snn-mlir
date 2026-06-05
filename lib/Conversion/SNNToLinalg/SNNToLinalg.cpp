@@ -1,4 +1,4 @@
-// Copyright 2026 Sensing & Control Systems, S.L.
+// Copyright 2026 N Vision Systems And Technologies SL
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 // Lowers SNN dialect ops to linalg/arith for CPU execution.
