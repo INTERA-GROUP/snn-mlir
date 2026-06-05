@@ -985,7 +985,7 @@ wheels = [
 
 [[package]]
 name = "snn-mlir"
-version = "0.1.0b0"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "nir" },
