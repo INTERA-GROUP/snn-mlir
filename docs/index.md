@@ -15,7 +15,7 @@ standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 A companion Python package (`snn-mlir`) reads any NIR file and generates SNN dialect MLIR
 ready to compile and run on any C-capable target.
 
-![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](snn-mlir_flow.png)
+![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](assets/snn-mlir_flow.png)
 
 ---
 

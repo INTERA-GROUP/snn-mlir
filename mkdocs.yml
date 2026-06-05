@@ -10,7 +10,7 @@ copyright: Copyright &copy; 2026 N Vision Systems And Technologies SL
 theme:
   name: material
   logo: assets/logo.png
-  favicon: assets/logo.png
+  favicon: assets/icon.png
   palette:
     - scheme: default
       primary: indigo
