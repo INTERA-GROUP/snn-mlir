@@ -65,17 +65,17 @@ We're happy to help. Reach out to the maintainers any time:
 
 ## Citation
 
-A companion paper describing snn-mlir is currently under submission to arXiv. This section will be updated with the full reference once the preprint is available.
-
-In the meantime, if you use snn-mlir in your research, please cite the repository directly:
+A companion paper describing snn-mlir is already submitted to arXiv. If you use snn-mlir in your research, please cite the white paper directly:
 
 ```bibtex
-@software{snn_mlir,
-  author  = {N Vision Systems And Technologies SL},
-  title   = {{snn-mlir}: An MLIR Dialect for Spiking Neural Networks},
-  year    = {2026},
-  url     = {https://github.com/INTERA-GROUP/snn-mlir},
-  version = {0.1.0},
+@misc{gener2026snnmlirmlirdialectcompiling,
+      title={SNN-MLIR: An MLIR Dialect for Compiling Neuromorphic SNNs from NIR to Bare-Metal C}, 
+      author={Alejandro García Gener and Alvaro Rollón de Pinedo},
+      year={2026},
+      eprint={2606.09213},
+      archivePrefix={arXiv},
+      primaryClass={cs.PL},
+      url={https://arxiv.org/abs/2606.09213}, 
 }
 ```
 
