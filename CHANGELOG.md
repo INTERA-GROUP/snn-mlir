@@ -1,4 +1,10 @@
 # Changelog
+## v0.1.1 (2026-06-09)
+
+### Fix
+
+- **uv**: updates snn-mlir version to 0.1.0
+
 ## v0.1.0 (2026-06-01)
 
 ## v0.1.0b0 (2026-06-01)
