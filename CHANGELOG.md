@@ -1,4 +1,10 @@
 # Changelog
+## v0.1.2 (2026-06-18)
+
+### Feat
+
+- **pypi**: add PyPI metadata, badges and frontend install docs
+
 ## v0.1.1 (2026-06-09)
 
 ### Fix

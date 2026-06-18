@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snn-mlir"
-version = "0.1.1"
+version = "0.1.2"
 description = "NIR-to-MLIR frontend for the snn-mlir SNN dialect (emits MLIR text; lowering requires the snn-opt toolchain)"
 readme = "README.md"
 license = { text = "Apache-2.0 WITH LLVM-exception" }
