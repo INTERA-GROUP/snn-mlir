@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml/badge.svg)](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml)
 [![Documentation Status](https://readthedocs.org/projects/snn-mlir/badge/?version=latest)](https://snn-mlir.readthedocs.io/en/latest/)
+[![PyPI](https://img.shields.io/pypi/v/snn-mlir)](https://pypi.org/project/snn-mlir/)
+[![arXiv](https://img.shields.io/badge/arXiv-2606.09213-b31b1b.svg)](https://arxiv.org/abs/2606.09213)
 [![Collaboration Network](https://img.shields.io/badge/Collaboration_Network-Open_Neuromorphic-blue)](https://open-neuromorphic.org/)
 
 An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Networks (SNNs),
@@ -12,8 +14,10 @@ quantized (`i8`/`i32`) types, enabling a single IR to target both simulation and
 hardware-optimized deployments. A reference CPU lowering (`SNNToLinalg`) converts SNN ops to
 standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 
-A companion Python package (`snn-mlir`) reads any NIR file and generates SNN dialect MLIR
-ready to compile and run on any C-capable target.
+A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/project/snn-mlir/))
+reads any NIR file and emits SNN dialect MLIR text, ready to feed into the `snn-opt` lowering
+toolchain. (The C runtime files used in the examples are generated separately by
+`examples/_codegen.py`, which is not part of the installable package.)
 
 ![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](assets/snn-mlir_flow.png)
 
@@ -65,7 +69,7 @@ We're happy to help. Reach out to the maintainers any time:
 
 ## Citation
 
-A companion paper describing snn-mlir is already submitted to arXiv. If you use snn-mlir in your research, please cite the white paper directly:
+A companion paper describing snn-mlir is published on arXiv. If you use snn-mlir in your research, please cite the white paper directly:
 
 ```bibtex
 @misc{gener2026snnmlirmlirdialectcompiling,
