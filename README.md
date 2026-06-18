@@ -2,13 +2,15 @@
 
 [![CI](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml/badge.svg)](https://github.com/INTERA-GROUP/snn-mlir/actions/workflows/ci.yml)
 [![Documentation Status](https://readthedocs.org/projects/snn-mlir/badge/?version=latest)](https://snn-mlir.readthedocs.io/en/latest/)
+[![PyPI](https://img.shields.io/pypi/v/snn-mlir)](https://pypi.org/project/snn-mlir/)
+[![arXiv](https://img.shields.io/badge/arXiv-2606.09213-b31b1b.svg)](https://arxiv.org/abs/2606.09213)
 [![Collaboration Network](https://img.shields.io/badge/Collaboration_Network-Open_Neuromorphic-blue)](https://open-neuromorphic.org/)
 
 An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Networks (SNNs), compatible with the [NIR (Neuromorphic Intermediate Representation)](https://neuroir.org/) standard.
 
 The dialect provides type-polymorphic operations that work with both `f32` (float) and quantized (`i8`/`i32`) types, enabling a single IR to target both simulation and hardware-optimized deployments. A reference CPU lowering (`SNNToLinalg`) converts SNN ops to standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 
-A companion Python package (`snn-mlir`) reads any NIR file and generates SNN dialect MLIR together with C runtime files ready to compile and run on any C-capable target.
+A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/project/snn-mlir/)) reads any NIR file and emits SNN dialect MLIR text, ready to feed into the `snn-opt` lowering toolchain. (The C runtime files used in the examples are generated separately by `examples/_codegen.py`, which is not part of the installable package.)
 
 ---
 
@@ -83,11 +85,16 @@ A standard C compiler links everything into a self-contained binary.
 # With uv (recommended — handles Python version and virtualenv)
 uv sync
 
-# Or with pip
+# Or with pip, from source
 pip install .
+
+# Or, as a back-up, the Python frontend only from PyPI
+pip install snn-mlir
 ```
 
-Requires Python ≥ 3.10.
+Requires Python ≥ 3.10. Note that `pip install snn-mlir` provides only the
+NIR-to-MLIR frontend; lowering the emitted MLIR additionally requires the `snn-opt`
+toolchain (see the build instructions below).
 
 ### API
 

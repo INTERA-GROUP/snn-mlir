@@ -32,6 +32,10 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# Python build artifacts
+dist/
+*.egg-info/
+
 # IDE
 .vscode/
 .idea/

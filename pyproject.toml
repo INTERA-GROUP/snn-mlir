@@ -5,14 +5,33 @@ build-backend = "hatchling.build"
 [project]
 name = "snn-mlir"
 version = "0.1.1"
-description = "Python NIR bridge for the snn-mlir MLIR dialect"
+description = "NIR-to-MLIR frontend for the snn-mlir SNN dialect (emits MLIR text; lowering requires the snn-opt toolchain)"
 readme = "README.md"
 license = { text = "Apache-2.0 WITH LLVM-exception" }
 requires-python = ">=3.10"
+keywords = ["mlir", "snn", "spiking-neural-networks", "nir", "compiler", "neuromorphic"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+]
 dependencies = [
     "nir>=1.0",
     "numpy>=1.24",
 ]
+
+[project.urls]
+Homepage = "https://github.com/INTERA-GROUP/snn-mlir"
+Documentation = "https://snn-mlir.readthedocs.io"
+Repository = "https://github.com/INTERA-GROUP/snn-mlir"
+Paper = "https://arxiv.org/abs/2606.09213"
+Issues = "https://github.com/INTERA-GROUP/snn-mlir/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["python/snn_mlir"]
