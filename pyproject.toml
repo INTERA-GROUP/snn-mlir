@@ -36,6 +36,9 @@ Issues = "https://github.com/INTERA-GROUP/snn-mlir/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["python/snn_mlir"]
 
+[tool.hatch.build.targets.sdist]
+only-include = ["python/snn_mlir", "README.md", "LICENSE", "NOTICE", "pyproject.toml"]
+
 [dependency-groups]
 dev = [
     "commitizen>=4",
