@@ -512,7 +512,7 @@ Contributions are welcome. Please follow these guidelines:
 
 ## Citation
 
-A companion paper describing snn-mlir is already submitted to arXiv. If you use snn-mlir in your research, please cite the white paper directly:
+A companion paper describing snn-mlir is published on arXiv. If you use snn-mlir in your research, please cite the white paper directly:
 
 ```bibtex
 @misc{gener2026snnmlirmlirdialectcompiling,
