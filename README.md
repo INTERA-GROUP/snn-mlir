@@ -111,6 +111,18 @@ snn_mlir.export("network.nir", "build/network.mlir", quantize=True)
 
 `to_mlir` returns a string containing the complete MLIR module, ready to pipe into `snn-opt`.
 
+For finer control, the same pipeline is exposed one stage at a time. This lets you inspect or
+quantize the parsed `NodeInfo` layers — or feed them to your own code generation — before emitting
+MLIR (`to_mlir` is exactly these three composed):
+
+```python
+layers = snn_mlir.parse_graph("network.nir")   # ordered list[NodeInfo]
+snn_mlir.quantize_layers(layers)               # in-place; call at most once
+mlir_text = snn_mlir.mlir_from_layers(layers, quantize=True)
+```
+
+See [`docs/python/api.md`](docs/python/api.md) for the full reference.
+
 ### Generating C runtime files
 
 The `examples/_codegen.py` module (not part of the pip-installable package) generates the C side:
@@ -308,7 +320,7 @@ pipelines/
 test/Dialect/SNN/              Roundtrip and lowering tests (llvm-lit)
 
 python/snn_mlir/               pip-installable Python package
-  _api.py                      Public API: to_mlir(), export()
+  _api.py                      Public API: to_mlir(), export(), parse_graph(), quantize_layers(), mlir_from_layers()
   _graph.py                    NIR graph walker and quantizer
   _emit.py                     MLIR text emitter
   nodes/                       One module per NIR node type; NODE_PARSERS registry
