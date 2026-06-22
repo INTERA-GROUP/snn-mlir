@@ -1,4 +1,10 @@
 # Changelog
+## v0.1.3 (2026-06-22)
+
+### Feat
+
+- **python**: add structured NIR-to-MLIR API
+
 ## v0.1.2 (2026-06-18)
 
 ### Feat
