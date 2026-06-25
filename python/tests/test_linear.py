@@ -8,6 +8,12 @@ def test_float_mlir_contains_snn_linear(linear_float):
     assert out_var == "%synapse_0"
 
 
+def test_float_mlir_reads_weight_global(linear_float):
+    lines, _ = linear_float.emit_mlir("%input", False, False)
+    text = "\n".join(lines)
+    assert "memref.get_global @w_0 : memref<16x8xf32>" in text
+
+
 def test_float_mlir_no_w_scale(linear_float):
     lines, _ = linear_float.emit_mlir("%input", False, False)
     assert "w_scale" not in "\n".join(lines)
@@ -38,12 +44,22 @@ def test_is_synapse_trait(linear_float):
     assert linear_float.is_neuron is False
 
 
-def test_weight_func_args_float(linear_float):
-    args = linear_float.weight_func_args(False)
-    assert len(args) == 1
-    assert "f32" in args[0][1]
+def test_weight_globals_float(linear_float):
+    globals_ = linear_float.weight_globals(False)
+    assert len(globals_) == 1
+    assert 'memref.global "private" constant @w_0' in globals_[0]
+    assert "memref<16x8xf32>" in globals_[0]
+    assert "dense<" in globals_[0]
 
 
-def test_weight_func_args_with_bias(linear_float_bias):
-    args = linear_float_bias.weight_func_args(False)
-    assert len(args) == 2
+def test_weight_globals_with_bias(linear_float_bias):
+    globals_ = linear_float_bias.weight_globals(False)
+    assert len(globals_) == 2
+    assert "@w_0" in globals_[0]
+    assert "@b_0" in globals_[1]
+
+
+def test_weight_globals_quantized(linear_quantized):
+    globals_ = linear_quantized.weight_globals(True)
+    assert "memref<16x8xi8>" in globals_[0]
+    assert "dense<" in globals_[0]

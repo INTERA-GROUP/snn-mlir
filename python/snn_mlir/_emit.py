@@ -20,12 +20,17 @@ def generate_mlir(layers: list[NodeInfo], quantize: bool) -> str:
     if last_neuron is None:
         raise ValueError("No neuron layer found in graph.")
 
+    # ── module-level weight constants ─────────────────────────────────────────
+    globals_: list[str] = []
+    for layer in layers:
+        globals_.extend(layer.weight_globals(quantize))
+
     # ── function arguments ────────────────────────────────────────────────────
+    # Weights are baked into the module as constant globals (see weight_globals);
+    # only the runtime I/O and carried neuron state remain function arguments.
     args: list[tuple[str, str]] = [
         ("%input", f"memref<{input_size}x{scalar_t}>"),
     ]
-    for layer in layers:
-        args.extend(layer.weight_func_args(quantize))
     for layer in layers:
         args.extend(layer.state_func_args(quantize))
 
@@ -43,9 +48,11 @@ def generate_mlir(layers: list[NodeInfo], quantize: bool) -> str:
     # ── assemble ──────────────────────────────────────────────────────────────
     args_str = ",\n    ".join(f"{name} : {typ}" for name, typ in args)
     body_str = "\n".join(body)
+    globals_str = ("\n".join(globals_) + "\n") if globals_ else ""
 
     return (
         "module {\n"
+        f"{globals_str}"
         "  func.func @snn_forward_step(\n"
         f"    {args_str}\n"
         "  ) attributes { llvm.emit_c_interface } {\n"

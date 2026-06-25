@@ -76,6 +76,7 @@ There are two directions of contribution, mirroring the two components:
 
 - `snn_mlir.export()` converts the NIR graph to SNN dialect MLIR text.
 - `_codegen.export()` (in `examples/_codegen.py`, example-only) generates the C runtime files:
-  weight arrays, memref descriptor typedefs, and a `main.c` timestep loop.
+  memref descriptor typedefs, neuron-state buffers, and a `main.c` timestep loop. (Weights are
+  baked into `network.mlir` as constant globals, so the C side no longer carries weight arrays.)
 - `pipelines/lower_cpu_linux.sh` chains `snn-opt → mlir-opt → mlir-translate` to produce LLVM IR.
 - A standard C compiler links everything into a self-contained binary.

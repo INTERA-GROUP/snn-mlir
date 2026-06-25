@@ -46,9 +46,8 @@ uv run python examples/snn_oxford/run.py --n-steps 50 # fewer timesteps (default
 This writes `examples/snn_oxford/build/`:
 
 ```
-network.mlir   ← SNN dialect IR
-snn_data.h     ← weight declarations + layer-size constants
-snn_data.c     ← weight arrays (float or int8)
+network.mlir   ← SNN dialect IR (weights baked in as constant globals)
+snn_data.h     ← layer-size constants
 main.c         ← memref descriptors + timestep loop + CSV output
 input.h        ← copied input data
 ```
@@ -61,7 +60,6 @@ bash pipelines/lower_cpu_linux.sh examples/snn_oxford/build/network.mlir
 # → examples/snn_oxford/build/network.ll
 
 clang examples/snn_oxford/build/network.ll \
-      examples/snn_oxford/build/snn_data.c \
       examples/snn_oxford/build/main.c \
       -o examples/snn_oxford/build/sim
 

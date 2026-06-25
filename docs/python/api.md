@@ -14,6 +14,12 @@ The public surface of the `snn_mlir` package is small and comes in two flavors:
 The layer objects are [`NodeInfo`](nir-node.md) instances; both `NodeInfo` and the
 `NODE_PARSERS` registry are re-exported at the top level for convenience.
 
+!!! note "Weights are baked in"
+    Synapse weights (and biases) are emitted as module-level `memref.global "private" constant`
+    values and read back with `memref.get_global`, rather than passed as function arguments. The
+    generated `@snn_forward_step` function therefore takes only the runtime input, the carried
+    neuron state, and the output buffer — the compiled module is self-contained.
+
 ```python
 import snn_mlir
 ```

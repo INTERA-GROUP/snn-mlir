@@ -26,9 +26,8 @@ uv run python examples/snn_oxford/run.py --quantize
 This produces `examples/snn_oxford/build/`:
 
 ```
-network.mlir   ← SNN dialect IR (feed to snn-opt)
-snn_data.h     ← weight declarations + layer-size constants
-snn_data.c     ← int8 weight arrays
+network.mlir   ← SNN dialect IR (feed to snn-opt; weights baked in as constant globals)
+snn_data.h     ← layer-size constants
 main.c         ← memref descriptor structs + timestep loop
 input.h        ← pre-baked input data (copied from examples/snn_oxford/)
 ```
@@ -41,7 +40,6 @@ bash pipelines/lower_cpu_linux.sh examples/snn_oxford/build/network.mlir
 # → examples/snn_oxford/build/network.ll
 
 clang examples/snn_oxford/build/network.ll \
-      examples/snn_oxford/build/snn_data.c \
       examples/snn_oxford/build/main.c \
       -o examples/snn_oxford/build/sim
 
@@ -140,7 +138,7 @@ _codegen.export(
     index_bits=64,           # 32 for embedded targets
     input_file="input.h",    # pre-baked input data
 )
-# Writes: build/snn_data.h, build/snn_data.c, build/main.c
+# Writes: build/snn_data.h, build/main.c
 ```
 
 ### Extending: `NODE_PARSERS`
@@ -265,13 +263,12 @@ After running either example you will find a `build/` directory with:
 
 | File | Description |
 |------|-------------|
-| `network.mlir` | SNN dialect IR — the MLIR representation of the network. Feed this to `snn-opt` and the lowering pipeline. |
-| `snn_data.h` | C header: `#define` constants for layer sizes and `extern` declarations for weight arrays. Include in `main.c`. |
-| `snn_data.c` | C source: flat weight arrays (`float` or `int8_t`) initialised from the trained weights. |
+| `network.mlir` | SNN dialect IR — the MLIR representation of the network, with weights baked in as `memref.global` constants. Feed this to `snn-opt` and the lowering pipeline. |
+| `snn_data.h` | C header: `#define` constants for layer sizes. Include in `main.c`. |
 | `main.c` | C harness: MLIR memref descriptor typedefs, neuron state arrays, a timestep loop that calls `_mlir_ciface_snn_forward_step`, and CSV output. |
 | `input.h` | Pre-baked input data (copied from the example directory). Provides `L0_input[N_STEPS][INPUT_SIZE]`. |
 
-`main.c` and `snn_data.*` are independent of the MLIR toolchain — they are standard C and can be compiled with any C11 compiler once `network.ll` (or a `.o` from it) is available.
+`main.c` is independent of the MLIR toolchain — it is standard C and can be compiled with any C11 compiler once `network.ll` (or a `.o` from it) is available.
 
 ---
 
@@ -288,7 +285,6 @@ bash pipelines/lower_cpu_linux.sh examples/snn_oxford/build/network.mlir
 
 # 3. Compile everything to an executable
 clang examples/snn_oxford/build/network.ll \
-      examples/snn_oxford/build/snn_data.c \
       examples/snn_oxford/build/main.c \
       -o examples/snn_oxford/build/sim
 

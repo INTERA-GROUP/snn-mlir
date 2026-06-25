@@ -83,10 +83,13 @@ class NodeInfo(ABC):
         data override it. Called once per layer by ``graph.quantize_layers()``.
         """
 
-    # ── MLIR function argument contributions ──────────────────────────────────
+    # ── MLIR module-level constant contributions ──────────────────────────────
 
-    def weight_func_args(self, quantize: bool) -> list[tuple[str, str]]:
+    def weight_globals(self, quantize: bool) -> list[str]:
+        """Module-level ``memref.global`` constant declarations for this layer."""
         return []
+
+    # ── MLIR function argument contributions ──────────────────────────────────
 
     def state_func_args(self, quantize: bool) -> list[tuple[str, str]]:
         return []

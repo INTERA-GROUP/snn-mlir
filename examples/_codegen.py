@@ -17,7 +17,10 @@ def export(
     index_bits: int = 64,
     input_file: str | Path | None = None,
 ) -> None:
-    """Generate C runtime files (snn_data.h/c + main.c) for a NIR graph.
+    """Generate C runtime files (snn_data.h + main.c) for a NIR graph.
+
+    Weights are baked into network.mlir as constant globals, so there is no
+    snn_data.c — the header only carries layer-size macros.
 
     Intended to be called alongside snn_mlir.export() in example scripts.
     Not part of the pip-installable snn-mlir package.
@@ -35,13 +38,12 @@ def export(
     first_synapse = next(layer for layer in layers if layer.is_synapse)
     last_neuron = next(layer for layer in reversed(layers) if layer.is_neuron)
 
-    generate_snn_data(
+    generate_snn_header(
         layers,
         input_size=first_synapse.weight_shape[1],
         output_size=last_neuron.state_size,
         n_steps=n_steps,
         output_path=output_path,
-        quantize=quantize,
     )
     generate_main_c(
         layers,
@@ -57,17 +59,15 @@ def export(
         shutil.copy2(input_file, output_path / "input.h")
 
 
-def generate_snn_data(
+def generate_snn_header(
     layers: list[NodeInfo],
     input_size: int,
     output_size: int,
     n_steps: int,
     output_path: Path,
-    quantize: bool,
 ) -> None:
-    """Write snn_data.h and snn_data.c (plain C arrays, no accelerator-specific layout)."""
-    _write_header(layers, input_size, output_size, n_steps, output_path, quantize)
-    _write_source(layers, output_path, quantize)
+    """Write snn_data.h — layer-size macros only (weights live in network.mlir)."""
+    _write_header(layers, input_size, output_size, n_steps, output_path)
 
 
 def generate_main_c(
@@ -95,10 +95,8 @@ def generate_main_c(
     if quantize:
         L += _memref_typedef("Memref1Di8", "int8_t", 1, idx_t)
         L += _memref_typedef("Memref1Di32", "int32_t", 1, idx_t)
-        L += _memref_typedef("Memref2Di8", "int8_t", 2, idx_t)
     else:
         L += _memref_typedef("Memref1Df32", "float", 1, idx_t)
-        L += _memref_typedef("Memref2Df32", "float", 2, idx_t)
     L.append("")
 
     # ── extern function declaration ───────────────────────────────────────────
@@ -141,31 +139,7 @@ def generate_main_c(
         L.append("    Memref1Df32 in_desc = mk1d_f32(input_buf, INPUT_SIZE);")
     L.append(f"    {out_desc_t} out_desc = {out_mk}(output_buf, OUTPUT_SIZE);")
 
-    # weight descriptors
-    for layer in layers:
-        if layer.is_synapse:
-            if quantize:
-                L.append(
-                    f"    Memref2Di8 w{layer.name}_desc ="
-                    f" mk2d_i8(w{layer.name}_data,"
-                    f" L{layer.name}_LINEAR_OUT, L{layer.name}_LINEAR_IN);",
-                )
-                if layer.int32_bias is not None:
-                    L.append(
-                        f"    Memref1Di32 b{layer.name}_desc ="
-                        f" mk1d_i32(b{layer.name}_data, L{layer.name}_LINEAR_OUT);",
-                    )
-            else:
-                L.append(
-                    f"    Memref2Df32 w{layer.name}_desc ="
-                    f" mk2d_f32(w{layer.name}_data,"
-                    f" L{layer.name}_LINEAR_OUT, L{layer.name}_LINEAR_IN);",
-                )
-                if layer.float_bias is not None:
-                    L.append(
-                        f"    Memref1Df32 b{layer.name}_desc ="
-                        f" mk1d_f32(b{layer.name}_data, L{layer.name}_LINEAR_OUT);",
-                    )
+    # Weights are baked into network.mlir as constant globals — no descriptors here.
 
     # state descriptors
     s_desc_t = "Memref1Di32" if quantize else "Memref1Df32"
@@ -192,13 +166,6 @@ def generate_main_c(
 
     # build call args
     call_args = ["&in_desc"]
-    for layer in layers:
-        if layer.is_synapse:
-            call_args.append(f"&w{layer.name}_desc")
-            if (quantize and layer.int32_bias is not None) or (
-                not quantize and layer.float_bias is not None
-            ):
-                call_args.append(f"&b{layer.name}_desc")
     for layer in layers:
         if layer.is_neuron:
             for sname in layer.state_names:
@@ -243,24 +210,18 @@ def _memref_typedef(name: str, elem_t: str, rank: int, idx_t: str) -> list[str]:
 def _extern_signature(layers: list[NodeInfo], idx_t: str, quantize: bool) -> list[str]:
     last_neuron = next((layer for layer in reversed(layers) if layer.is_neuron), None)
     if quantize:
-        in_t, w_t, b_t, s_t = "Memref1Di8", "Memref2Di8", "Memref1Di32", "Memref1Di32"
+        in_t, s_t = "Memref1Di8", "Memref1Di32"
         out_t = (
             "Memref1Di32"
             if (last_neuron and last_neuron.output_element_type(True) == "i32")
             else "Memref1Di8"
         )
     else:
-        in_t, w_t, b_t, s_t = "Memref1Df32", "Memref2Df32", "Memref1Df32", "Memref1Df32"
+        in_t, s_t = "Memref1Df32", "Memref1Df32"
         out_t = "Memref1Df32"
 
+    # Weights are constant globals inside the module, not function arguments.
     args = [f"{in_t} *input"]
-    for layer in layers:
-        if layer.is_synapse:
-            args.append(f"{w_t} *w_{layer.name}")
-            if (quantize and layer.int32_bias is not None) or (
-                not quantize and layer.float_bias is not None
-            ):
-                args.append(f"{b_t} *b_{layer.name}")
     for layer in layers:
         if layer.is_neuron:
             for sname in layer.state_names:
@@ -283,16 +244,10 @@ def _mk_helpers(idx_t: str, quantize: bool) -> list[str]:
             f"static Memref1Di32 mk1d_i32(int32_t *p, {idx_t} n) {{",
             "    return (Memref1Di32){p, p, 0, {n}, {1}};",
             "}",
-            f"static Memref2Di8 mk2d_i8(int8_t *p, {idx_t} r, {idx_t} c) {{",
-            "    return (Memref2Di8){p, p, 0, {r, c}, {c, 1}};",
-            "}",
         ]
     return [
         f"static Memref1Df32 mk1d_f32(float *p, {idx_t} n) {{",
         "    return (Memref1Df32){p, p, 0, {n}, {1}};",
-        "}",
-        f"static Memref2Df32 mk2d_f32(float *p, {idx_t} r, {idx_t} c) {{",
-        "    return (Memref2Df32){p, p, 0, {r, c}, {c, 1}};",
         "}",
     ]
 
@@ -303,7 +258,6 @@ def _write_header(
     output_size: int,
     n_steps: int,
     output_path: Path,
-    quantize: bool,
 ) -> None:
     lines = [
         "/* Auto-generated by snn-mlir — do NOT edit */",
@@ -318,72 +272,12 @@ def _write_header(
         "",
     ]
     for layer in layers:
-        if layer.is_synapse:
-            out_s, in_s = layer.weight_shape
-            lines.append(f"#define L{layer.name}_LINEAR_IN   {in_s}")
-            lines.append(f"#define L{layer.name}_LINEAR_OUT  {out_s}")
-        elif layer.is_neuron:
+        if layer.is_neuron:
             lines.append(f"#define {layer.state_size_define} {layer.state_size}")
-    lines += ["", "/* Weight arrays (defined in snn_data.c) */"]
-    for layer in layers:
-        if layer.is_synapse:
-            out_s, in_s = layer.weight_shape
-            n = out_s * in_s
-            t = "int8_t" if quantize else "float"
-            lines.append(f"extern {t} w{layer.name}_data[{n}];")
-            if quantize and layer.int32_bias is not None:
-                lines.append(f"extern int32_t b{layer.name}_data[{out_s}];")
-            elif not quantize and layer.float_bias is not None:
-                lines.append(f"extern float b{layer.name}_data[{out_s}];")
-    lines += ["", "#endif /* SNN_DATA_H */"]
-    (output_path / "snn_data.h").write_text("\n".join(lines) + "\n")
-
-
-def _write_source(
-    layers: list[NodeInfo],
-    output_path: Path,
-    quantize: bool,
-) -> None:
-    lines = [
-        "/* Auto-generated by snn-mlir — do NOT edit */",
-        '#include "snn_data.h"',
+    lines += [
         "",
+        "/* Weights live as constant globals inside network.mlir, not here. */",
+        "",
+        "#endif /* SNN_DATA_H */",
     ]
-    for layer in layers:
-        if not layer.is_synapse:
-            continue
-        out_s, in_s = layer.weight_shape
-        lines.append(f"/* {layer.name}: [{out_s} x {in_s}] */")
-        if quantize:
-            flat = layer.int8_weights.flatten()
-            total = len(flat)
-            lines.append(f"int8_t w{layer.name}_data[{total}] = {{")
-            chunk = 16
-            for s in range(0, total, chunk):
-                vals = ", ".join(str(int(v)) for v in flat[s : s + chunk])
-                lines.append(f"    {vals}{',' if s + chunk < total else ''}")
-            lines.append("};")
-            lines.append("")
-            if layer.int32_bias is not None:
-                flat_b = layer.int32_bias.flatten()
-                lines.append(f"int32_t b{layer.name}_data[{out_s}] = {{")
-                lines.append("    " + ", ".join(str(int(v)) for v in flat_b))
-                lines.append("};")
-                lines.append("")
-        else:
-            flat = layer.float_weights.flatten()
-            total = len(flat)
-            lines.append(f"float w{layer.name}_data[{total}] = {{")
-            chunk = 8
-            for s in range(0, total, chunk):
-                vals = ", ".join(f"{v:.8e}f" for v in flat[s : s + chunk])
-                lines.append(f"    {vals}{',' if s + chunk < total else ''}")
-            lines.append("};")
-            lines.append("")
-            if layer.float_bias is not None:
-                flat_b = layer.float_bias.flatten()
-                lines.append(f"float b{layer.name}_data[{out_s}] = {{")
-                lines.append("    " + ", ".join(f"{v:.8e}f" for v in flat_b))
-                lines.append("};")
-                lines.append("")
-    (output_path / "snn_data.c").write_text("\n".join(lines) + "\n")
+    (output_path / "snn_data.h").write_text("\n".join(lines) + "\n")

@@ -71,15 +71,34 @@ class LinearInfo(NodeInfo):
                 self.bias * (2**self._w_scale),
             ).astype(np.int32)
 
-    # ── MLIR function arg contributions ──────────────────────────────────────
+    # ── MLIR module-level constants ───────────────────────────────────────────
 
-    def weight_func_args(self, quantize: bool) -> list[tuple[str, str]]:
-        w_t = "i8" if quantize else "f32"
-        b_t = "i32" if quantize else "f32"
-        args = [(f"%w_{self.name}", f"memref<{self.output_size}x{self.input_size}x{w_t}>")]
+    def weight_globals(self, quantize: bool) -> list[str]:
+        """Emit module-level ``memref.global`` constants for weights (and bias).
+
+        Weights are baked into the IR as private constant globals rather than
+        passed as function arguments, so the compiled module is self-contained
+        and a backend can inspect or transform the weight data directly.
+        """
+        o, i = self.output_size, self.input_size
+        if quantize:
+            w_t, w_lit = "i8", _dense_int(self.int8_weights)
+        else:
+            w_t, w_lit = "f32", _dense_float(self.weights)
+        lines = [
+            f'  memref.global "private" constant @w_{self.name}'
+            f" : memref<{o}x{i}x{w_t}> = dense<{w_lit}>",
+        ]
         if self.bias is not None:
-            args.append((f"%b_{self.name}", f"memref<{self.output_size}x{b_t}>"))
-        return args
+            if quantize:
+                b_t, b_lit = "i32", _dense_int(self.int32_bias)
+            else:
+                b_t, b_lit = "f32", _dense_float(self.bias)
+            lines.append(
+                f'  memref.global "private" constant @b_{self.name}'
+                f" : memref<{o}x{b_t}> = dense<{b_lit}>",
+            )
+        return lines
 
     # ── MLIR body emission ────────────────────────────────────────────────────
 
@@ -128,14 +147,21 @@ def _emit_linear_float(
     bias_var: str | None,
 ) -> list[str]:
     o, i = info.output_size, info.input_size
-    bias_part = f" bias({bias_var} : memref<{o}xf32>)" if bias_var else ""
-    return [
+    lines = [
         "",
         f"    // --- Linear {info.name}: ({i}) -> ({o}) ---",
+        f"    {weight_var} = memref.get_global @w_{info.name} : memref<{o}x{i}xf32>",
+    ]
+    bias_part = ""
+    if bias_var:
+        lines.append(f"    {bias_var} = memref.get_global @b_{info.name} : memref<{o}xf32>")
+        bias_part = f" bias({bias_var} : memref<{o}xf32>)"
+    lines += [
         f"    {output_var} = memref.alloca() : memref<{o}xf32>",
         f"    snn.linear ins({input_var}, {weight_var}){bias_part} out({output_var})"
         f" : memref<{i}xf32>, memref<{o}x{i}xf32> -> memref<{o}xf32>",
     ]
+    return lines
 
 
 def _emit_linear_int(
@@ -146,12 +172,36 @@ def _emit_linear_int(
     bias_var: str | None,
 ) -> list[str]:
     o, i = info.output_size, info.input_size
-    bias_part = f" bias({bias_var} : memref<{o}xi32>)" if bias_var else ""
-    return [
+    lines = [
         "",
         f"    // --- Linear {info.name}: ({i}) -> ({o}), int8 weights ---",
+        f"    {weight_var} = memref.get_global @w_{info.name} : memref<{o}x{i}xi8>",
+    ]
+    bias_part = ""
+    if bias_var:
+        lines.append(f"    {bias_var} = memref.get_global @b_{info.name} : memref<{o}xi32>")
+        bias_part = f" bias({bias_var} : memref<{o}xi32>)"
+    lines += [
         f"    {output_var} = memref.alloca() : memref<{o}xi32>",
         f"    snn.linear ins({input_var}, {weight_var}){bias_part} out({output_var})"
         f" {{w_scale = {info._w_scale} : i64}}"
         f" : memref<{i}xi8>, memref<{o}x{i}xi8> -> memref<{o}xi32>",
     ]
+    return lines
+
+
+# ── dense literal helpers ───────────────────────────────────────────────────────
+
+
+def _dense_int(arr: np.ndarray) -> str:
+    """Render an int numpy array as a nested MLIR ``dense`` element literal."""
+    if arr.ndim == 1:
+        return "[" + ", ".join(str(int(v)) for v in arr) + "]"
+    return "[" + ", ".join(_dense_int(row) for row in arr) + "]"
+
+
+def _dense_float(arr: np.ndarray) -> str:
+    """Render a float numpy array as a nested MLIR ``dense`` element literal."""
+    if arr.ndim == 1:
+        return "[" + ", ".join(f"{float(v):.8e}" for v in arr) + "]"
+    return "[" + ", ".join(_dense_float(row) for row in arr) + "]"
