@@ -1,4 +1,10 @@
 # Changelog
+## v0.2.0 (2026-06-25)
+
+### Feat
+
+- **python**: emit weights as in-IR memref.global constants
+
 ## v0.1.3 (2026-06-22)
 
 ### Feat
