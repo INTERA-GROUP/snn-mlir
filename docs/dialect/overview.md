@@ -39,6 +39,23 @@ Spike-output ops (`snn.cubalif`, `snn.lif`) emit binary activations (`f32` 0/1 o
 Voltage-output ops (`snn.cubali`, `snn.li`) emit continuous membrane potential and are used as
 the final layer in regression or readout networks.
 
+## Op interfaces
+
+The dialect declares two native op interfaces so a consumer — a lowering, an analysis, a backend —
+can read a layer **uniformly**, without switching on the concrete op type:
+
+- **`SynapseOpInterface`** — implemented by `snn.linear`. Exposes the activation, weight,
+  accumulator, and optional bias operands plus the `K`/`N` shape of `accumulator = weights @ input`.
+- **`NeuronOpInterface`** — implemented by all four neuron ops (`snn.cubalif` / `snn.lif` /
+  `snn.li` / `snn.cubali`). Exposes their operands, fixed-point parameters, and two capability
+  predicates (`hasCurrentStage()`, `producesSpike()`) that distinguish the four kinds — so one
+  pattern can lower every neuron.
+
+Because they are declared natively on the ops, any `snn.linear` *is* a `SynapseOpInterface` and any
+neuron op *is* a `NeuronOpInterface` — no attachment or registration. See
+[Implementing a new lowering pass](lowering-pass.md#reading-a-layer-through-op-interfaces) for how
+to match on them.
+
 ## Notes & design decisions
 
 !!! note "Type-polymorphic: float **and** integer"

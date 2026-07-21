@@ -302,6 +302,7 @@ The pipeline script chains `snn-opt --convert-snn-to-linalg | mlir-opt <passes> 
 include/SNN/                   Dialect headers and TableGen definitions
   SNNDialect.td / .h           Dialect declaration
   SNNOps.td / .h               Op definitions (ODS format)
+  SNNInterfaces.td / .h        Op interfaces (SynapseOpInterface, NeuronOpInterface)
   Conversion/
     SNNToLinalg.h              Public header for the CPU lowering pass
 
@@ -416,6 +417,7 @@ In your pass source:
 
 ```cpp
 #include "SNN/SNNOps.h"
+#include "SNN/SNNInterfaces.h"           // SynapseOpInterface / NeuronOpInterface
 #include "SNN/Conversion/SNNToLinalg.h"  // if using the CPU lowering
 ```
 
@@ -485,6 +487,22 @@ struct ConvertSNNToMyBackendPass
 ```
 
 **5. Register in CMake** using `add_mlir_conversion_library()` — see `lib/Conversion/SNNToLinalg/CMakeLists.txt` as a template.
+
+### Matching ops uniformly with the op interfaces
+
+To lower "any synapse layer" or "any spiking neuron" without a `switch` over the concrete op
+types, use the two op interfaces the dialect declares natively:
+
+- **`SynapseOpInterface`** on `snn.linear` — activation/weights/accumulator/bias operands plus the
+  `getK()` / `getN()` shape of `accumulator = weights @ input`.
+- **`NeuronOpInterface`** on `snn.cubalif` / `snn.lif` / `snn.li` / `snn.cubali` — operands,
+  fixed-point parameters, and two capability predicates (`hasCurrentStage()` / `producesSpike()`)
+  that collapse the four neuron kinds into one uniform reader.
+
+Include `SNN/SNNInterfaces.h`, link `MLIRSNN`, and match with
+`OpInterfaceRewritePattern<snn::NeuronOpInterface>` (or `SynapseOpInterface`) instead of the
+concrete op. See [Implementing a new lowering pass](docs/dialect/lowering-pass.md) for a worked
+example and the full method reference.
 
 ---
 
