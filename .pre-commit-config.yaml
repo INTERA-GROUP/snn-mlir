@@ -8,9 +8,11 @@ repos:
       - id: check-toml
       - id: check-added-large-files
 
+  # Pinned to the ruff version CI resolves via `uv sync` so a check that passes
+  # here passes in CI (isort/I001 behaviour can differ across ruff versions).
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
+    rev: v0.15.14
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
