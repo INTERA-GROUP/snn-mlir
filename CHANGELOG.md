@@ -1,4 +1,14 @@
 # Changelog
+## v0.3.0 (2026-07-21)
+
+### Feat
+
+- **dialect**: add SynapseOpInterface and NeuronOpInterface
+
+### Fix
+
+- **nodes**: reject unsupported v_reset, fix LI parsing, clamp w_scale
+
 ## v0.2.0 (2026-06-25)
 
 ### Feat
