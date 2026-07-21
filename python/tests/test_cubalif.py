@@ -3,7 +3,6 @@
 import nir
 import numpy as np
 import pytest
-
 from snn_mlir.nodes.cubalif import CubaLIFInfo, parse_cubalif
 
 
@@ -56,10 +55,15 @@ def test_intermediate_node_allocates(cubalif_float):
 
 
 def _cubalif_node(v_reset):
-    return nir.CubaLIF(tau_syn=np.full(4, 0.1), tau_mem=np.full(4, 0.05),
-                       r=np.full(4, 0.5), v_leak=np.zeros(4),
-                       v_threshold=np.ones(4), v_reset=np.full(4, v_reset),
-                       input_type={"input": np.array([4])})
+    return nir.CubaLIF(
+        tau_syn=np.full(4, 0.1),
+        tau_mem=np.full(4, 0.05),
+        r=np.full(4, 0.5),
+        v_leak=np.zeros(4),
+        v_threshold=np.ones(4),
+        v_reset=np.full(4, v_reset),
+        input_type={"input": np.array([4])},
+    )
 
 
 def test_parse_cubalif_accepts_zero_v_reset():

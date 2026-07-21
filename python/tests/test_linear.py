@@ -70,21 +70,21 @@ def test_quantize_clamps_w_scale_to_d_scale():
     # which would make the rescale shift (d_scale - w_scale) negative. The clamp
     # caps w_scale at d_scale so the shift stays non-negative.
     import numpy as np
-
     from snn_mlir.nodes.linear import _D_SCALE, LinearInfo
 
-    info = LinearInfo(name="0", input_size=4, output_size=4,
-                      weights=np.full((4, 4), 1e-3, dtype=np.float32))
+    info = LinearInfo(
+        name="0", input_size=4, output_size=4, weights=np.full((4, 4), 1e-3, dtype=np.float32)
+    )
     info.quantize()
     assert info.w_scale == _D_SCALE
 
 
 def test_quantize_leaves_normal_w_scale_unclamped():
     import numpy as np
-
     from snn_mlir.nodes.linear import _D_SCALE, LinearInfo
 
-    info = LinearInfo(name="0", input_size=4, output_size=4,
-                      weights=np.full((4, 4), 0.5, dtype=np.float32))
+    info = LinearInfo(
+        name="0", input_size=4, output_size=4, weights=np.full((4, 4), 0.5, dtype=np.float32)
+    )
     info.quantize()
     assert info.w_scale < _D_SCALE

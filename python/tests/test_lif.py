@@ -3,7 +3,6 @@
 import nir
 import numpy as np
 import pytest
-
 from snn_mlir.nodes.lif import LIFInfo, parse_lif
 
 
@@ -59,9 +58,14 @@ def test_intermediate_node_allocates(lif_float):
 
 
 def _lif_node(v_reset):
-    return nir.LIF(tau=np.full(4, 2.0), r=np.full(4, 4.0), v_leak=np.zeros(4),
-                   v_threshold=np.ones(4), v_reset=np.full(4, v_reset),
-                   input_type={"input": np.array([4])})
+    return nir.LIF(
+        tau=np.full(4, 2.0),
+        r=np.full(4, 4.0),
+        v_leak=np.zeros(4),
+        v_threshold=np.ones(4),
+        v_reset=np.full(4, v_reset),
+        input_type={"input": np.array([4])},
+    )
 
 
 def test_parse_lif_accepts_zero_v_reset():
