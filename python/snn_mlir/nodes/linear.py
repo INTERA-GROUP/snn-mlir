@@ -9,6 +9,15 @@ from ._base import NodeInfo
 
 __all__ = ["LinearInfo", "parse_affine", "parse_linear"]
 
+# The downstream neuron's Q-format scale (see e.g. nodes/lif.py::_D_SCALE). A
+# layer's rescale shift is `d_scale - w_scale`, so w_scale must not exceed
+# d_scale or the shift goes negative, which is unrepresentable on hardware whose
+# rescale is left-shift-only. More weight precision than the neuron's fixed-point
+# state can hold buys nothing anyway. d_scale is 12 for every neuron today; if it
+# ever varies per neuron, this clamp must move to where the synapse->neuron edge
+# is known (insert_rescale_nodes), since quantize() cannot see its neuron.
+_D_SCALE = 12
+
 
 @dataclass
 class LinearInfo(NodeInfo):
@@ -64,7 +73,7 @@ class LinearInfo(NodeInfo):
             abs(qmax / max_w) if max_w != 0 else float("inf"),
             abs(qmin / min_w) if min_w != 0 else float("inf"),
         )
-        self._w_scale = int(np.floor(np.log2(ratio)))
+        self._w_scale = min(int(np.floor(np.log2(ratio))), _D_SCALE)
         self._quantized_weights = np.round(w * (2**self._w_scale)).astype(np.int8)
         if self.bias is not None:
             self._quantized_bias = np.round(

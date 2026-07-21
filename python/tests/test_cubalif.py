@@ -1,6 +1,10 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from snn_mlir.nodes.cubalif import CubaLIFInfo
+import nir
+import numpy as np
+import pytest
+
+from snn_mlir.nodes.cubalif import CubaLIFInfo, parse_cubalif
 
 
 def test_float_mlir_contains_snn_cubalif(cubalif_float):
@@ -49,3 +53,22 @@ def test_intermediate_node_allocates(cubalif_float):
     lines, out_var = cubalif_float.emit_mlir("%in", False, False)
     assert "memref.alloca" in "\n".join(lines)
     assert out_var == "%spikes_1"
+
+
+def _cubalif_node(v_reset):
+    return nir.CubaLIF(tau_syn=np.full(4, 0.1), tau_mem=np.full(4, 0.05),
+                       r=np.full(4, 0.5), v_leak=np.zeros(4),
+                       v_threshold=np.ones(4), v_reset=np.full(4, v_reset),
+                       input_type={"input": np.array([4])})
+
+
+def test_parse_cubalif_accepts_zero_v_reset():
+    info = parse_cubalif(_cubalif_node(0.0), "c0")
+    assert info.size == 4
+
+
+def test_parse_cubalif_rejects_nonzero_v_reset():
+    # Previously parse_cubalif silently ignored node.v_reset, so a nonzero-reset
+    # model compiled clean and computed the wrong network. It must now reject it.
+    with pytest.raises(ValueError, match="v_reset != 0 not supported"):
+        parse_cubalif(_cubalif_node(0.3), "c0")

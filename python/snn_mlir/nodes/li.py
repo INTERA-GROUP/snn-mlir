@@ -75,17 +75,21 @@ class LIInfo(NodeInfo):
 
 
 def parse_li(node: nir.LI, name: str) -> LIInfo:
-    if np.unique(node.v_leak).size != 1:
-        raise ValueError("v_leak must be uniform across all LI neurons")
-    coupling = float(node.r[0] * node.w_in[0])
-    if not np.isclose(coupling, 1.0):
-        raise ValueError(
-            f"LI coupling r*w_in={coupling:.4f} must be ≈ 1.0 (non-unit coupling not supported)",
-        )
+    # LI is a LIF neuron without the firing/reset terminal: same leaky-integrator
+    # dynamics, so the decay is derived from tau/r exactly as in parse_lif.
+    if not np.allclose(node.v_leak, 0.0):
+        raise ValueError("v_leak must be 0 for LI")
+    if np.unique(node.tau).size != 1:
+        raise ValueError("tau must be uniform across all LI neurons")
+    if np.unique(node.r).size != 1:
+        raise ValueError("r must be uniform across all LI neurons")
+
+    dt = float(node.tau[0] / node.r[0])
+    decay = float(1 - (dt / node.tau[0]))
     return LIInfo(
         name=name,
         size=int(node.input_type["input"][0]),
-        decay=float(node.v_leak[0]),
+        decay=decay,
     )
 
 

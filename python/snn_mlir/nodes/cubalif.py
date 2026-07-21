@@ -106,6 +106,8 @@ def parse_cubalif(node: nir.CubaLIF, name: str) -> CubaLIFInfo:
 
     if not np.allclose(node.v_leak, 0):
         raise ValueError("v_leak must be 0 for CubaLIF")
+    if not np.allclose(node.v_reset, 0):
+        raise ValueError("CubaLIF v_reset != 0 not supported yet")
     if np.unique(node.tau_syn).size != 1:
         raise ValueError("cur_decay must be uniform across all neurons")
     if np.unique(node.tau_mem).size != 1:

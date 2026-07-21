@@ -91,6 +91,8 @@ def parse_lif(node: nir.LIF, name: str) -> LIFInfo:
         raise ValueError("v_threshold must be uniform across all LIF neurons")
     if np.unique(node.v_reset).size != 1:
         raise ValueError("v_reset must be uniform across all LIF neurons")
+    if not np.allclose(node.v_reset, 0.0):
+        raise ValueError("LIF v_reset != 0 not supported yet")
 
     dt = float(node.tau[0] / node.r[0])
     decay = float(1 - (dt / node.tau[0]))

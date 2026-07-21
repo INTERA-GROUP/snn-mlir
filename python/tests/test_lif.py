@@ -1,6 +1,10 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from snn_mlir.nodes.lif import LIFInfo
+import nir
+import numpy as np
+import pytest
+
+from snn_mlir.nodes.lif import LIFInfo, parse_lif
 
 
 def test_is_neuron_trait(lif_float):
@@ -52,3 +56,21 @@ def test_intermediate_node_allocates(lif_float):
     lines, out_var = lif_float.emit_mlir("%in", False, False)
     assert "memref.alloca" in "\n".join(lines)
     assert out_var == "%spikes_2"
+
+
+def _lif_node(v_reset):
+    return nir.LIF(tau=np.full(4, 2.0), r=np.full(4, 4.0), v_leak=np.zeros(4),
+                   v_threshold=np.ones(4), v_reset=np.full(4, v_reset),
+                   input_type={"input": np.array([4])})
+
+
+def test_parse_lif_accepts_zero_v_reset():
+    info = parse_lif(_lif_node(0.0), "l0")
+    assert info.size == 4
+
+
+def test_parse_lif_rejects_nonzero_v_reset():
+    # A nonzero reset is not yet supported by the quantized lowering; it must be
+    # rejected loudly rather than silently produce a divergent network.
+    with pytest.raises(ValueError, match="v_reset != 0 not supported"):
+        parse_lif(_lif_node(0.3), "l0")
