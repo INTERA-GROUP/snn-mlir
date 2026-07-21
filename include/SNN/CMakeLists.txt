@@ -1,5 +1,12 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Op interfaces (SynapseOpInterface, NeuronOpInterface). Generated first: the op
+# declarations below reference the interface base classes.
+set(LLVM_TARGET_DEFINITIONS SNNInterfaces.td)
+mlir_tablegen(SNNInterfaces.h.inc   -gen-op-interface-decls)
+mlir_tablegen(SNNInterfaces.cpp.inc -gen-op-interface-defs)
+add_public_tablegen_target(MLIRSNNInterfacesIncGen)
+
 set(LLVM_TARGET_DEFINITIONS SNNOps.td)
 
 mlir_tablegen(SNNOps.h.inc       -gen-op-decls)

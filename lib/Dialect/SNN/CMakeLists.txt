@@ -5,6 +5,7 @@ add_mlir_dialect_library(MLIRSNN
   SNNOps.cpp
 
   DEPENDS
+  MLIRSNNInterfacesIncGen
   MLIRSNNOpsIncGen
 
   LINK_LIBS PUBLIC

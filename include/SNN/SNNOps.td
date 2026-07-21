@@ -10,6 +10,7 @@
 #define SNN_OPS_TD
 
 include "SNN/SNNDialect.td"
+include "SNN/SNNInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -32,7 +33,8 @@ class SNN_Op<string mnemonic, list<Trait> traits = []>
 // w_scale is only meaningful in quantized mode. In float mode it can be
 // omitted (defaults to 0, lowering ignores it).
 
-def SNN_LinearOp : SNN_Op<"linear"> {
+def SNN_LinearOp : SNN_Op<"linear",
+    [DeclareOpInterfaceMethods<SynapseOpInterface>]> {
   let summary = "Linear (matrix-vector) synapse layer";
   let description = [{
     Computes output = weights @ input (matrix-vector product).
@@ -103,7 +105,8 @@ def SNN_RescaleOp : SNN_Op<"rescale"> {
 //
 // In float mode d_scale is ignored (default 0).
 
-def SNN_CubaLIFOp : SNN_Op<"cubalif"> {
+def SNN_CubaLIFOp : SNN_Op<"cubalif",
+    [DeclareOpInterfaceMethods<NeuronOpInterface>]> {
   let summary = "CubaLIF spiking neuron layer";
   let description = [{
     Computes current-based leaky integrate-and-fire dynamics:
@@ -156,7 +159,8 @@ def SNN_CubaLIFOp : SNN_Op<"cubalif"> {
 //
 // v_reset defaults to 0 in both modes.
 
-def SNN_LIFOp : SNN_Op<"lif"> {
+def SNN_LIFOp : SNN_Op<"lif",
+    [DeclareOpInterfaceMethods<NeuronOpInterface>]> {
   let summary = "LIF spiking neuron layer";
   let description = [{
     Leaky integrate-and-fire dynamics:
@@ -200,7 +204,8 @@ def SNN_LIFOp : SNN_Op<"lif"> {
 //   Float mode:     state/output f32, attributes are f64
 //   Quantized mode: input/state/output i32, attributes are i64 (Q12)
 
-def SNN_LIOp : SNN_Op<"li"> {
+def SNN_LIOp : SNN_Op<"li",
+    [DeclareOpInterfaceMethods<NeuronOpInterface>]> {
   let summary = "LI leaky integrator neuron layer";
   let description = [{
     Leaky integrator dynamics (no threshold or spike):
@@ -240,7 +245,8 @@ def SNN_LIOp : SNN_Op<"li"> {
 //   Float mode:     all f32, attributes are f64
 //   Quantized mode: state/output i32, attributes are i64 (Q12)
 
-def SNN_CubaLIOp : SNN_Op<"cubali"> {
+def SNN_CubaLIOp : SNN_Op<"cubali",
+    [DeclareOpInterfaceMethods<NeuronOpInterface>]> {
   let summary = "CubaLI current-based leaky integrator neuron layer";
   let description = [{
     Current-based leaky integrator dynamics (no threshold or spike):

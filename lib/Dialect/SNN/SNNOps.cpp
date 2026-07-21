@@ -7,6 +7,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 
+// Auto-generated interface method models (SynapseOpInterface, NeuronOpInterface).
+#include "SNN/SNNInterfaces.cpp.inc"
+
 // Pull in the auto-generated op method bodies (builders, parsers, printers,
 // verifiers, etc. — everything derived from the assemblyFormat and traits
 // you declared in SNNOps.td).
@@ -171,3 +174,77 @@ LogicalResult snn::LIOp::verify() {
   return verifyNeuron(getOperation(), getInput(), {getVoltage()}, getOutput(),
                       /*spikeOutput=*/false);
 }
+
+// -----------------------------------------------------------------------
+// SynapseOpInterface — snn.linear
+// -----------------------------------------------------------------------
+//
+// Weights are [O, I]: dim 0 is the output count (N), dim 1 the input/reduction
+// count (K). getSynapseBias() forwards to the optional bias operand (null Value
+// when absent).
+Value snn::LinearOp::getActivationIn() { return getInput(); }
+Value snn::LinearOp::getAccumulatorOut() { return getOutput(); }
+Value snn::LinearOp::getWeightMatrix() { return getWeights(); }
+Value snn::LinearOp::getSynapseBias() { return getBias(); }
+int64_t snn::LinearOp::getK() { return memrefOf(getWeights()).getDimSize(1); }
+int64_t snn::LinearOp::getN() { return memrefOf(getWeights()).getDimSize(0); }
+
+// -----------------------------------------------------------------------
+// NeuronOpInterface — snn.cubalif / lif / li / cubali
+// -----------------------------------------------------------------------
+//
+// The decay attribute names differ across ops: cubalif/cubali carry a separate
+// cur_decay_int + vol_decay_int, whereas lif/li carry a single decay_int (the
+// membrane decay). getVoltageDecay() normalizes both to "the membrane decay".
+
+// snn.cubalif: 2-state (current, voltage), spikes.
+Value snn::CubaLIFOp::getNeuronInput() { return getInput(); }
+Value snn::CubaLIFOp::getNeuronOutput() { return getOutput(); }
+Value snn::CubaLIFOp::getCurrentState() { return getCurrent(); }
+Value snn::CubaLIFOp::getVoltageState() { return getVoltage(); }
+int64_t snn::CubaLIFOp::getScale() { return getDScale(); }
+int64_t snn::CubaLIFOp::getCurrentDecay() { return getCurDecayInt(); }
+int64_t snn::CubaLIFOp::getVoltageDecay() { return getVolDecayInt(); }
+int64_t snn::CubaLIFOp::getThreshold() { return getThresholdInt(); }
+int64_t snn::CubaLIFOp::getReset() { return 0; }
+bool snn::CubaLIFOp::hasCurrentStage() { return true; }
+bool snn::CubaLIFOp::producesSpike() { return true; }
+
+// snn.lif: 1-state (voltage), spikes. Single decay_int = membrane decay.
+Value snn::LIFOp::getNeuronInput() { return getInput(); }
+Value snn::LIFOp::getNeuronOutput() { return getOutput(); }
+Value snn::LIFOp::getCurrentState() { return Value(); }
+Value snn::LIFOp::getVoltageState() { return getVoltage(); }
+int64_t snn::LIFOp::getScale() { return getDScale(); }
+int64_t snn::LIFOp::getCurrentDecay() { return 0; }
+int64_t snn::LIFOp::getVoltageDecay() { return getDecayInt(); }
+int64_t snn::LIFOp::getThreshold() { return getThresholdInt(); }
+int64_t snn::LIFOp::getReset() { return getVResetInt(); }
+bool snn::LIFOp::hasCurrentStage() { return false; }
+bool snn::LIFOp::producesSpike() { return true; }
+
+// snn.li: 1-state (voltage), voltage readout (no spike, no threshold).
+Value snn::LIOp::getNeuronInput() { return getInput(); }
+Value snn::LIOp::getNeuronOutput() { return getOutput(); }
+Value snn::LIOp::getCurrentState() { return Value(); }
+Value snn::LIOp::getVoltageState() { return getVoltage(); }
+int64_t snn::LIOp::getScale() { return getDScale(); }
+int64_t snn::LIOp::getCurrentDecay() { return 0; }
+int64_t snn::LIOp::getVoltageDecay() { return getDecayInt(); }
+int64_t snn::LIOp::getThreshold() { return 0; }
+int64_t snn::LIOp::getReset() { return 0; }
+bool snn::LIOp::hasCurrentStage() { return false; }
+bool snn::LIOp::producesSpike() { return false; }
+
+// snn.cubali: 2-state (current, voltage), voltage readout (no spike/threshold).
+Value snn::CubaLIOp::getNeuronInput() { return getInput(); }
+Value snn::CubaLIOp::getNeuronOutput() { return getOutput(); }
+Value snn::CubaLIOp::getCurrentState() { return getCurrent(); }
+Value snn::CubaLIOp::getVoltageState() { return getVoltage(); }
+int64_t snn::CubaLIOp::getScale() { return getDScale(); }
+int64_t snn::CubaLIOp::getCurrentDecay() { return getCurDecayInt(); }
+int64_t snn::CubaLIOp::getVoltageDecay() { return getVolDecayInt(); }
+int64_t snn::CubaLIOp::getThreshold() { return 0; }
+int64_t snn::CubaLIOp::getReset() { return 0; }
+bool snn::CubaLIOp::hasCurrentStage() { return true; }
+bool snn::CubaLIOp::producesSpike() { return false; }
