@@ -1,4 +1,10 @@
 # Changelog
+## v0.3.1 (2026-07-21)
+
+### Fix
+
+- **ci**: satisfy ruff check and pin ruff to CI's version
+
 ## v0.3.0 (2026-07-21)
 
 ### Feat
