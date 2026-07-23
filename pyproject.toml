@@ -26,6 +26,9 @@ dependencies = [
     "numpy>=1.24",
 ]
 
+[project.scripts]
+snn-mlir = "snn_mlir._cli:main"
+
 [project.urls]
 Homepage = "https://github.com/INTERA-GROUP/snn-mlir"
 Documentation = "https://snn-mlir.readthedocs.io"
