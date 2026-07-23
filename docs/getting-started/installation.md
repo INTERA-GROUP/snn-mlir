@@ -2,9 +2,10 @@
 
 There are two levels of setup, depending on how far down the pipeline you want to go:
 
-1. **Python only** — enough to read NIR and generate `network.mlir`. Fast, no compiler build.
-2. **Full toolchain** — adds LLVM/MLIR and the `snn-opt` tool so you can lower all the way to
-   an executable.
+1. **Python only** — enough for `snn-mlir export` and `snn-mlir codegen`: read NIR, emit
+   `network.mlir` and the C sources. Fast, no compiler build.
+2. **Full toolchain** — adds LLVM/MLIR and the `snn-opt` tool, which is what `snn-mlir run`
+   needs to compile and execute the model.
 
 Start with the Python setup; add the toolchain when you need to compile and run.
 
@@ -23,22 +24,23 @@ uv run pre-commit install      # optional: ruff lint + format git hooks
 Verify it works:
 
 ```bash
-uv run python -c "import snn_mlir; print(snn_mlir.__name__, 'ok')"
+uv run snn-mlir --version      # the CLI is installed
 uv run pytest                  # Python unit tests should all pass
 ```
 
-You can already generate MLIR from a NIR file:
+You can already generate MLIR and the C runtime from a NIR file:
 
 ```bash
-uv run python examples/snn_oxford/run.py            # writes examples/snn_oxford/build/network.mlir
+uv run snn-mlir export examples/snn_oxford/network.nir   # → examples/snn_oxford/network.mlir
+uv run snn-mlir codegen examples/snn_oxford              # → examples/snn_oxford/build/
 ```
 
-If `build/network.mlir` appears, the frontend is working. To go further and actually compile
-that MLIR, set up the toolchain below.
+If `build/network.mlir` and `build/main.c` appear, the frontend is working. To go further and
+actually compile and run that MLIR (`snn-mlir run`), set up the toolchain below.
 
 ## 2. LLVM/MLIR + the dialect (full toolchain)
 
-Needed only to lower `network.mlir` → LLVM IR → executable.
+Needed only to lower `network.mlir` → LLVM IR → executable, which is what `snn-mlir run` does.
 
 ### Prerequisites
 
@@ -89,45 +91,19 @@ cmake --build build --target snn-opt
 ### Verify the toolchain
 
 ```bash
-./build/bin/snn-opt --help     # the tool runs
-ninja -C build check-snn       # MLIR lit tests (FileCheck over test/Dialect/SNN/*.mlir)
+./build/bin/snn-opt --help              # the tool runs
+ninja -C build check-snn                # MLIR lit tests (FileCheck over test/Dialect/SNN/*.mlir)
+uv run snn-mlir run examples/snn_oxford # the whole pipeline, end to end
 ```
 
-If `check-snn` is green, you have a working end-to-end install. Head to the
-[examples](../examples/snn-oxford.md) to lower and run a real network.
+If `check-snn` is green and `run` writes `examples/snn_oxford/build/results.csv`, you have a
+working end-to-end install.
 
-## Repository layout
+!!! tip "No environment variables needed for an in-repo build"
+    `snn-mlir run` finds `snn-opt` at `build/bin/snn-opt` and reads the LLVM tool paths from the
+    `MLIR_DIR` recorded in `build/CMakeCache.txt` — so it always uses the same LLVM that built
+    `snn-opt`. Set `SNN_OPT` (the `snn-opt` binary), `MLIR_DIR` (your LLVM build's
+    `lib/cmake/mlir`), or `CC` (the C compiler used for the final link) only to override that.
 
-```
-include/SNN/                   Dialect headers and TableGen definitions
-  SNNDialect.td / .h           Dialect declaration
-  SNNOps.td / .h               Op definitions (ODS format)
-  Conversion/
-    SNNToLinalg.h              Public header for the CPU lowering pass
-
-lib/Dialect/SNN/               Dialect implementation (auto-generated + custom)
-lib/Conversion/SNNToLinalg/    CPU lowering: snn.* → linalg/arith
-
-tools/snn-opt/                 Standalone opt tool (dialect + CPU lowering)
-
-pipelines/
-  lower_cpu_linux.sh           Lower SNN dialect → LLVM IR on x86-64 Linux
-
-test/Dialect/SNN/              Roundtrip and lowering tests (llvm-lit)
-
-python/snn_mlir/               pip-installable Python package
-  _api.py                      Public API: to_mlir(), export()
-  _graph.py                    NIR graph walker and quantizer
-  _emit.py                     MLIR text emitter
-  nodes/                       One module per NIR node type; NODE_PARSERS registry
-
-python/tests/                  Python unit tests (pytest)
-
-examples/
-  _codegen.py                  C runtime file generator (snn_data.h/c + main.c)
-  snn_oxford/                  LAVA-DL CubaLIF example (network.nir + run.py)
-  snntorch/                    SNNTorch example (network.nir + run.py)
-
-scripts/
-  build_snn_dialect.sh         One-time build of snn-opt
-```
+Head to the [Quick start](quickstart.md) to run your own model, or to the
+[examples](../examples/snn-oxford.md) for a walk-through of a real network.

@@ -15,9 +15,17 @@ hardware-optimized deployments. A reference CPU lowering (`SNNToLinalg`) convert
 standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 
 A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/project/snn-mlir/))
-reads any NIR file and emits SNN dialect MLIR text, ready to feed into the `snn-opt` lowering
-toolchain. (The C runtime files used in the examples are generated separately by
-`examples/_codegen.py`, which is not part of the installable package.)
+reads any NIR file and emits SNN dialect MLIR text, together with the C sources of a reference
+CPU runtime. Its `snn-mlir` command takes a trained network from `.nir` to a running binary
+without writing a line of Python:
+
+```bash
+snn-mlir export  model.nir      # → model.mlir          (SNN dialect IR)
+snn-mlir codegen my_model/      # → my_model/build/     (MLIR + C sources)
+snn-mlir run     my_model/      # → build/results.csv   (compiled and executed)
+```
+
+See the [Quick start](getting-started/quickstart.md).
 
 ![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](assets/snn-mlir_flow.png)
 
@@ -48,9 +56,13 @@ MLIR pipeline** and which ship as a runnable example.
 
 ## Which path is for you?
 
-snn-mlir sits at the boundary between the neuromorphic and compiler worlds, so there are two
-natural entry points:
+snn-mlir sits at the boundary between the neuromorphic and compiler worlds, so there are three
+natural entry points — described in more detail in
+[How it works](getting-started/how-it-works.md#three-ways-to-use-it):
 
+- **Just want to run a model?** Start at the [Quick start](getting-started/quickstart.md). Point
+  the CLI at a folder with your `.nir` and an input, and get compilable C — or a finished run —
+  back out.
 - **Coming from SNNs / neuromorphics?** You'll most likely care about the
   [Python package](python/nir-mapping.md) and the translation from **NIR to MLIR** — exporting
   your trained network and getting a portable, embedded-ready representation out.

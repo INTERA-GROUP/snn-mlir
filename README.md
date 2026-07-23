@@ -10,7 +10,7 @@ An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Network
 
 The dialect provides type-polymorphic operations that work with both `f32` (float) and quantized (`i8`/`i32`) types, enabling a single IR to target both simulation and hardware-optimized deployments. A reference CPU lowering (`SNNToLinalg`) converts SNN ops to standard `linalg`/`arith` operations that any MLIR-based backend can consume.
 
-A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/project/snn-mlir/)) reads any NIR file and emits SNN dialect MLIR text, ready to feed into the `snn-opt` lowering toolchain. (The C runtime files used in the examples are generated separately by `examples/_codegen.py`, which is not part of the installable package.)
+A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/project/snn-mlir/)) reads any NIR file and emits SNN dialect MLIR text, together with the C sources of a reference CPU runtime. Its `snn-mlir` command takes a trained network from `.nir` to a running binary without writing a line of Python.
 
 ---
 
@@ -19,8 +19,8 @@ A companion Python package (`snn-mlir`, available on [PyPI](https://pypi.org/pro
 ```bash
 git clone <this-repo> snn-mlir
 cd snn-mlir
-uv sync                          # install Python env (requires uv)
-uv run python examples/snn_oxford/run.py --quantize
+uv sync                                              # install Python env (requires uv)
+uv run snn-mlir codegen examples/snn_oxford -q       # NIR → MLIR + C sources
 ```
 
 This produces `examples/snn_oxford/build/`:
@@ -28,23 +28,26 @@ This produces `examples/snn_oxford/build/`:
 ```
 network.mlir   ← SNN dialect IR (feed to snn-opt; weights baked in as constant globals)
 snn_data.h     ← layer-size constants
+input.h        ← input.csv baked into int8_t L0_input[N_STEPS][INPUT_SIZE]
 main.c         ← memref descriptor structs + timestep loop
-input.h        ← pre-baked input data (copied from examples/snn_oxford/)
 ```
 
-To lower all the way to an executable (requires `snn-opt` and LLVM built — see [Building the dialect](#building-the-dialect)):
+Once `snn-opt` and LLVM are built (see [Building the dialect](#building-the-dialect)), one command does the whole thing — codegen, lower, compile, execute:
 
 ```bash
-export MLIR_DIR=/path/to/llvm-project/build/lib/cmake/mlir
-bash pipelines/lower_cpu_linux.sh examples/snn_oxford/build/network.mlir
-# → examples/snn_oxford/build/network.ll
-
-clang examples/snn_oxford/build/network.ll \
-      examples/snn_oxford/build/main.c \
-      -o examples/snn_oxford/build/sim
-
-./examples/snn_oxford/build/sim
+uv run snn-mlir run examples/snn_oxford -q
+# → examples/snn_oxford/build/results.csv   (one row per timestep)
 ```
+
+The three verbs:
+
+```
+snn-mlir export  <model.nir> [-o OUT.mlir] [-q]   # NIR → SNN dialect MLIR
+snn-mlir codegen <folder> [-q]                    # folder → build/ (MLIR + C sources)
+snn-mlir run     <folder> [-q]                    # + compile, execute → results.csv
+```
+
+A model folder is exactly one `*.nir` plus an `input.csv` (one row per timestep, one column per input channel — the row count is what sets `N_STEPS`). `-q`/`--quantize` selects int8 weights and Q12 fixed-point state; the default is `f32`. Full walk-through: [Quick start](https://snn-mlir.readthedocs.io/en/latest/getting-started/quickstart/).
 
 ---
 
@@ -54,24 +57,25 @@ clang examples/snn_oxford/build/network.ll \
 ┌─────────────┐   snn_mlir.export()    ┌─────────────────┐
 │  .nir file  │ ─────────────────────► │  network.mlir   │  SNN dialect IR
 └─────────────┘                        └─────────────────┘
-                                                │
-       _codegen.export()                        │  snn-opt + mlir-opt
-              │                                 ▼
-              ▼                        ┌─────────────────┐
+       │                                        │
+       │  codegen_folder()                      │  snn-opt + mlir-opt + mlir-translate
+       │  (+ input.csv)                         ▼
+       ▼                               ┌─────────────────┐
    ┌────────────────────┐              │  network.ll     │  LLVM IR
-   │  snn_data.h / .c   │              └─────────────────┘
-   │  main.c            │                       │
-   │  input.h (copied)  │                       │  clang
+   │  snn_data.h        │              └─────────────────┘
+   │  input.h           │                       │
+   │  main.c            │                       │  llc
    └────────────────────┘                       ▼
               │                        ┌─────────────────┐
-              └──────────────────────► │   executable    │
-                        link           └─────────────────┘
+              └──────────────────────► │   executable    │ ──► results.csv
+                        cc             └─────────────────┘
 ```
 
 `snn_mlir.export()` converts the NIR graph to SNN dialect MLIR text.
-`_codegen.export()` (in `examples/_codegen.py`) generates the C runtime files: weight arrays, memref descriptor typedefs, and a `main.c` timestep loop.
+`snn_mlir.codegen_folder()` generates the C runtime files: memref descriptor typedefs, neuron-state buffers, the input array baked from `input.csv`, and a `main.c` timestep loop.
 `pipelines/lower_cpu_linux.sh` chains `snn-opt → mlir-opt → mlir-translate` to produce LLVM IR.
-A standard C compiler links everything into a self-contained binary.
+`llc` turns that into an object file and a standard C compiler links everything into a self-contained binary.
+`snn_mlir.run_folder()` — `snn-mlir run` — drives all of it and captures the output.
 
 ---
 
@@ -90,9 +94,8 @@ pip install .
 pip install snn-mlir
 ```
 
-Requires Python ≥ 3.10. Note that `pip install snn-mlir` provides only the
-NIR-to-MLIR frontend; lowering the emitted MLIR additionally requires the `snn-opt`
-toolchain (see the build instructions below).
+Requires Python ≥ 3.10. `pip install snn-mlir` gives you the `snn-mlir` command with `export` and
+`codegen`; `run` additionally requires the `snn-opt` toolchain (see the build instructions below).
 
 ### API
 
@@ -121,25 +124,29 @@ mlir_text = snn_mlir.mlir_from_layers(layers, quantize=True)
 
 See [`docs/python/api.md`](docs/python/api.md) for the full reference.
 
-### Generating C runtime files
+### Generating and running the C reference
 
-The `examples/_codegen.py` module (not part of the pip-installable package) generates the C side:
+The same folder-level functions the CLI drives are part of the package:
 
 ```python
-import sys
-sys.path.insert(0, "examples/")
-import _codegen
+import snn_mlir
 
-_codegen.export(
-    "network.nir",
-    "build/",                # output directory
+# codegen — model folder → build/ (network.mlir, snn_data.h, input.h, main.c)
+build = snn_mlir.codegen_folder(
+    "examples/snn_oxford",
     quantize=True,
-    n_steps=100,
-    index_bits=64,           # 32 for embedded targets
-    input_file="input.h",    # pre-baked input data
+    index_bits=64,      # 32 for embedded targets; not exposed on the CLI
 )
-# Writes: build/snn_data.h, build/main.c
+
+# run — codegen, lower, compile, execute; returns the path to results.csv
+results = snn_mlir.run_folder("examples/snn_oxford", quantize=True)
+print(results.read_text())
 ```
+
+The folder must hold exactly one `*.nir` and an `input.csv`; `n_steps` is the CSV's row count, and
+its column count must match the network input size. `run_folder` raises a `FileNotFoundError`
+listing what is missing if the toolchain is incomplete — `snn_mlir.toolchain_available()` checks
+the same thing without raising.
 
 ### Extending: `NODE_PARSERS`
 
@@ -231,30 +238,29 @@ Each SNN op covers a family of NIR nodes. Integrate-and-fire variants (`nir.Cuba
 
 ## Examples
 
-Both examples follow the same pattern: run `run.py` to generate the build artefacts, then compile and run.
+Each example is a model folder — one `network.nir` plus an `input.csv` — so both follow the same pattern: `codegen` for the sources, `run` for a finished execution.
 
 ### `examples/snn_oxford/`
 
-A two-layer CubaLIF network trained on the Oxford dataset using LAVA-DL:
+A two-layer CubaLIF network trained on the Oxford dataset using LAVA-DL, driven by 100 timesteps of 200-channel input:
 
 ```
 Linear(200→256) → CubaLIF(256) → Linear(256→200) → CubaLIF(200)
 ```
 
 ```bash
-# Generate MLIR + C files
-uv run python examples/snn_oxford/run.py              # float32
-uv run python examples/snn_oxford/run.py --quantize   # int8 weights, Q12 state
-uv run python examples/snn_oxford/run.py --n-steps 50 # fewer timesteps
+uv run snn-mlir run examples/snn_oxford              # float32
+uv run snn-mlir run examples/snn_oxford --quantize   # int8 weights, Q12 state
+uv run snn-mlir codegen examples/snn_oxford          # sources only, no toolchain needed
 ```
 
 ### `examples/snntorch/`
 
-A network exported from SNNTorch:
+A decoy network exported from SNNTorch that mixes `Linear`/`Affine` and `LIF`/`CubaLIF` to exercise the pipeline; 25 timesteps of 784-channel random input:
 
 ```bash
-uv run python examples/snntorch/run.py
-uv run python examples/snntorch/run.py --quantize
+uv run snn-mlir run examples/snntorch
+uv run snn-mlir run examples/snntorch --quantize
 ```
 
 ### Generated files explained
@@ -266,7 +272,9 @@ After running either example you will find a `build/` directory with:
 | `network.mlir` | SNN dialect IR — the MLIR representation of the network, with weights baked in as `memref.global` constants. Feed this to `snn-opt` and the lowering pipeline. |
 | `snn_data.h` | C header: `#define` constants for layer sizes. Include in `main.c`. |
 | `main.c` | C harness: MLIR memref descriptor typedefs, neuron state arrays, a timestep loop that calls `_mlir_ciface_snn_forward_step`, and CSV output. |
-| `input.h` | Pre-baked input data (copied from the example directory). Provides `L0_input[N_STEPS][INPUT_SIZE]`. |
+| `input.h` | `input.csv` baked into `int8_t L0_input[N_STEPS][INPUT_SIZE]`. |
+
+`snn-mlir run` adds `network.ll`, `network.o`, the executable, and `results.csv` — one row per timestep, with no reference comparison. Nothing is cleaned up.
 
 `main.c` is independent of the MLIR toolchain — it is standard C and can be compiled with any C11 compiler once `network.ll` (or a `.o` from it) is available.
 
@@ -274,25 +282,30 @@ After running either example you will find a `build/` directory with:
 
 ## Full pipeline (CPU, x86-64)
 
-After generating the build artefacts with `run.py`, lower to LLVM IR and compile:
+`snn-mlir run` does all of this for you; here it is by hand, for when you want to inspect or modify a stage:
 
 ```bash
-# 1. Set MLIR_DIR to your LLVM build
+# 1. Generate the sources, and point at your LLVM build
+uv run snn-mlir codegen examples/snn_oxford
 export MLIR_DIR=/path/to/llvm-project/build/lib/cmake/mlir
 
 # 2. Lower network.mlir → network.ll (LLVM IR)
 bash pipelines/lower_cpu_linux.sh examples/snn_oxford/build/network.mlir
 
-# 3. Compile everything to an executable
-clang examples/snn_oxford/build/network.ll \
-      examples/snn_oxford/build/main.c \
-      -o examples/snn_oxford/build/sim
+# 3. Compile the IR with the SAME LLVM that built snn-opt, then link with any C compiler
+$MLIR_DIR/../../../bin/llc --relocation-model=pic -filetype=obj \
+    examples/snn_oxford/build/network.ll -o examples/snn_oxford/build/network.o
+
+cc examples/snn_oxford/build/main.c examples/snn_oxford/build/network.o \
+   -o examples/snn_oxford/build/sim -lm
 
 # 4. Run — outputs CSV rows (one per timestep)
 ./examples/snn_oxford/build/sim
 ```
 
 The pipeline script chains `snn-opt --convert-snn-to-linalg | mlir-opt <passes> | mlir-translate --mlir-to-llvmir`. See `pipelines/lower_cpu_linux.sh` for the full pass sequence.
+
+> **Don't hand `network.ll` to your system clang.** The IR carries the LLVM version that built `snn-opt`, and an older system clang will reject it. Always go `.ll` → `.o` with the matching `llc`, then let the system compiler see only plain C and an object file.
 
 ---
 
@@ -320,14 +333,16 @@ python/snn_mlir/               pip-installable Python package
   _api.py                      Public API: to_mlir(), export(), parse_graph(), quantize_layers(), mlir_from_layers()
   _graph.py                    NIR graph walker and quantizer
   _emit.py                     MLIR text emitter
+  _codegen.py                  C runtime generator: codegen_folder()
+  _run.py                      Compile + execute: run_folder(), toolchain detection
+  _cli.py                      The snn-mlir command (export / codegen / run)
   nodes/                       One module per NIR node type; NODE_PARSERS registry
 
 python/tests/                  Python unit tests (pytest)
 
 examples/
-  _codegen.py                  C runtime file generator (snn_data.h/c + main.c)
-  snn_oxford/                  LAVA-DL CubaLIF example (network.nir + run.py)
-  snntorch/                    SNNTorch example (network.nir + run.py)
+  snn_oxford/                  LAVA-DL CubaLIF example (network.nir + input.csv)
+  snntorch/                    SNNTorch example (network.nir + input.csv)
 
 scripts/
   build_snn_dialect.sh         One-time build of snn-opt

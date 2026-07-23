@@ -4,6 +4,8 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 
 from ._api import export, mlir_from_layers, parse_graph, quantize_layers, to_mlir
+from ._codegen import codegen_folder
+from ._run import run_folder, toolchain_available
 from .nodes import NODE_PARSERS, NodeInfo
 
 try:
@@ -15,9 +17,12 @@ __all__ = [
     "NODE_PARSERS",
     "NodeInfo",
     "__version__",
+    "codegen_folder",
     "export",
     "mlir_from_layers",
     "parse_graph",
     "quantize_layers",
+    "run_folder",
     "to_mlir",
+    "toolchain_available",
 ]

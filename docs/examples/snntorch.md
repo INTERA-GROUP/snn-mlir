@@ -19,7 +19,7 @@ The mix is the point. In a single graph it exercises:
 - a single-state **`LIF`** neuron (`lif1`) **and** a two-state **`CubaLIF`** neuron (`lif2`) —
   exercising both neuron families and, in quantized mode, two `snn.rescale` insertions.
 
-The 784-wide input matches a flattened 28×28 frame; the random `input.h` simply drives spikes
+The 784-wide input matches a flattened 28×28 frame; the random `input.csv` simply drives spikes
 through this topology.
 
 ## Files in the example
@@ -27,25 +27,20 @@ through this topology.
 | File | Role |
 |---|---|
 | `network.nir` | The snnTorch-exported network in NIR. |
-| `input.h` | Pre-baked (random) input (`L0_input[N_STEPS][INPUT_SIZE]`). |
-| `target.csv` | Reference output for comparison. |
-| `run.py` | Driver: exports `network.mlir` and generates the C runtime into `build/`. |
+| `input.csv` | Random input: 25 rows (timesteps) × 784 columns (input channels). |
+| `build/` | Generated artefacts. Created by `codegen`/`run`, not checked in. |
 
 ## Run it
 
 ```bash
-uv run python examples/snntorch/run.py              # float32
-uv run python examples/snntorch/run.py --quantize   # int8 weights, Q12 state
-uv run python examples/snntorch/run.py --n-steps 50 # default is 25
+uv run snn-mlir run examples/snntorch              # float32
+uv run snn-mlir run examples/snntorch --quantize   # int8 weights, Q12 state
 ```
 
-`run.py` options:
+The number of timesteps comes from the 25 rows of `input.csv` — swap in a longer CSV and the
+generated `main.c` follows. Output lands in `examples/snntorch/build/results.csv`, 10 columns
+wide.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--quantize` | off | int8 weights + Q12 fixed-point neuron state |
-| `--n-steps N` | `25` | Number of simulation timesteps baked into `main.c` |
-
-The generated `build/` directory and the lower→compile→run steps are identical to the
-[Oxford example](snn-oxford.md#2-lower-and-compile-requires-the-full-toolchain) — just swap the
-paths from `examples/snn_oxford/` to `examples/snntorch/`.
+The generated `build/` directory and the by-hand lower→compile→run steps are identical to the
+[Oxford example](snn-oxford.md#the-long-way-by-hand) — just swap the paths from
+`examples/snn_oxford/` to `examples/snntorch/`.

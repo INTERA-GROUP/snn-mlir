@@ -40,6 +40,18 @@ We group them by which half of the project they live in.
     targets — FPGA, ASIC, other accelerators — are exactly what the
     [lowering-pass extension point](dialect/lowering-pass.md) is for.
 
+## CLI & reference runtime
+
+!!! warning "`run` targets the host CPU only"
+    `snn-mlir run` compiles and executes for the machine you are on (Linux/x86-64 is what we
+    test); `--platform` is reserved but accepts only `linux`. Cross-compiling is not automated —
+    take the `codegen` output and lower `network.mlir` with your own target triple.
+
+!!! warning "One model per folder, no reference comparison"
+    A model folder is exactly one `.nir` plus one `input.csv`. The run writes `results.csv` and
+    stops: no golden output is shipped and no accuracy check is performed, deliberately — how
+    to compare against your simulator is your call.
+
 ---
 
 Want one of these lifted for your use case? **[We'd love your help](contributing.md)** — or

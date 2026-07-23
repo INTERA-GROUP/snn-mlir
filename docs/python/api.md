@@ -1,6 +1,6 @@
 # API reference
 
-The public surface of the `snn_mlir` package is small and comes in two flavors:
+The public surface of the `snn_mlir` package is small and comes in three flavors:
 
 - **One-shot** — [`to_mlir`](#snn_mlirto_mlirsource-quantizefalse-str) /
   [`export`](#snn_mlirexportsource-output_path-quantizefalse-none) turn a NIR graph straight
@@ -10,6 +10,10 @@ The public surface of the `snn_mlir` package is small and comes in two flavors:
   [`mlir_from_layers`](#snn_mlirmlir_from_layerslayers-quantizefalse-str) expose the pipeline
   one stage at a time, so you can inspect or quantize the parsed layers — or feed them to your
   own code generation — before emitting MLIR. `to_mlir` is simply these three composed.
+- **Folder-level** — [`codegen_folder`](#snn_mlircodegen_folderfolder-quantizefalse-index_bits64-path)
+  and [`run_folder`](#snn_mlirrun_folderfolder-quantizefalse-platformlinux-path) are what the
+  `snn-mlir codegen` and `snn-mlir run` commands call. They take a model folder and produce the
+  C reference runtime — and, for `run_folder`, a compiled and executed binary.
 
 The layer objects are [`NodeInfo`](nir-node.md) instances; both `NodeInfo` and the
 `NODE_PARSERS` registry are re-exported at the top level for convenience.
@@ -136,9 +140,81 @@ mlir = snn_mlir.mlir_from_layers(layers, quantize=True)
 
 ---
 
-!!! note "Generating the C runtime is separate"
-    Producing `snn_data.h/.c` and `main.c` is **not** part of the installable package — it's
-    handled by the example-only helper `examples/_codegen.py`. See
-    [How it works](../getting-started/how-it-works.md) and the [examples](../examples/snn-oxford.md).
+## `snn_mlir.codegen_folder(folder, *, quantize=False, index_bits=64) -> Path`
+
+Generate the CPU reference sources for a **model folder** — the function behind
+`snn-mlir codegen`. The folder must hold exactly one `*.nir` and an `input.csv`; the output goes
+to `<folder>/build/`.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `folder` | `str \| Path` | — | Model folder: exactly one `*.nir` plus `input.csv`. |
+| `quantize` | `bool` | `False` | int8 weights and Q12 fixed-point neuron state. |
+| `index_bits` | `int` | `64` | Width of the memref descriptor index fields. Use `32` for a 32-bit embedded target. Not exposed on the CLI. |
+
+**Returns** — `Path`: the generated `build/` directory, containing `network.mlir`,
+`snn_data.h`, `input.h`, and `main.c`.
+
+**Raises** — `FileNotFoundError` if the folder, the `.nir`, or `input.csv` is missing;
+`ValueError` if the folder holds more than one `.nir`, or if `input.csv`'s column count does not
+match the network's input size.
+
+!!! note "The CSV sets the timestep count"
+    `n_steps` is the **row count** of `input.csv`, and each row is baked into `input.h` as
+    `int8_t L0_input[N_STEPS][INPUT_SIZE]`. There is no `n_steps` parameter.
+
+**Example**
+
+```python
+import snn_mlir
+
+build = snn_mlir.codegen_folder("my_model", quantize=True, index_bits=32)
+print(sorted(p.name for p in build.iterdir()))
+```
+
+---
+
+## `snn_mlir.run_folder(folder, *, quantize=False, platform="linux") -> Path`
+
+Codegen, compile, and execute a model folder — the function behind `snn-mlir run`. Lowers
+`network.mlir` through `snn-opt` and `mlir-opt`, compiles it with `llc`, links the generated
+`main.c` against it with the system C compiler, runs the binary, and captures its per-timestep
+output.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `folder` | `str \| Path` | — | Model folder, as for `codegen_folder`. |
+| `quantize` | `bool` | `False` | int8 weights and Q12 fixed-point neuron state. |
+| `platform` | `str` | `"linux"` | Reserved for future targets; only `"linux"` is accepted today. |
+
+**Returns** — `Path`: the written `build/results.csv`, one row per timestep. No reference
+comparison is performed.
+
+**Raises** — `FileNotFoundError` (with a per-tool breakdown) if the toolchain is incomplete;
+`subprocess.CalledProcessError` if a tool fails; `ValueError` for an unsupported `platform`.
+Every intermediate — `network.ll`, `network.o`, the executable — is left on disk.
+
+**Example**
+
+```python
+import snn_mlir
+
+if snn_mlir.toolchain_available():
+    results = snn_mlir.run_folder("my_model", quantize=True)
+    print(results.read_text())
+```
+
+---
+
+## `snn_mlir.toolchain_available() -> bool`
+
+`True` if every tool `run_folder` needs (`snn-opt`, `mlir-opt`, `mlir-translate`, `llc`, and a C
+compiler) can be resolved. Use it to skip tests or degrade gracefully instead of catching the
+`FileNotFoundError`. Resolution order and the `SNN_OPT` / `MLIR_DIR` / `CC` overrides are
+documented in [Installation](../getting-started/installation.md).
 
 <!-- When ready to auto-generate this page from docstrings, switch to the mkdocstrings plugin. -->

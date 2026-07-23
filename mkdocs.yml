@@ -53,6 +53,7 @@ nav:
   - Getting started:
       - How it works: getting-started/how-it-works.md
       - Installation: getting-started/installation.md
+      - Quick start: getting-started/quickstart.md
       - Using the dialect in your project: getting-started/embedding.md
   - SNN MLIR dialect:
       - Overview & operations: dialect/overview.md
