@@ -6,6 +6,12 @@ import nir
 import numpy as np
 import pytest
 from snn_mlir._cli import main
+from snn_mlir._run import toolchain_available
+
+requires_toolchain = pytest.mark.skipif(
+    not toolchain_available(),
+    reason="snn-opt/LLVM/C-compiler toolchain not resolvable (set SNN_OPT + MLIR_DIR)",
+)
 
 
 @pytest.fixture
@@ -104,6 +110,25 @@ def test_codegen_width_mismatch(tmp_path, nir_linear_cubalif, capsys):
     assert "expects 8 inputs" in capsys.readouterr().err
 
 
-def test_run_not_implemented(capsys):
-    assert main(["run", "some_folder"]) == 1
-    assert "not available yet" in capsys.readouterr().err
+def test_run_toolchain_missing(model_folder, monkeypatch, capsys):
+    # Hide every tool: empty PATH, no override envs, no repo build/bin snn-opt,
+    # and no in-repo CMakeCache LLVM.
+    monkeypatch.setattr("snn_mlir._run._repo_snn_opt", lambda: None)
+    monkeypatch.setattr("snn_mlir._run._cmake_cache_mlir_dir", lambda: None)
+    monkeypatch.setenv("PATH", "")
+    for var in ("SNN_OPT", "MLIR_DIR", "CC"):
+        monkeypatch.delenv(var, raising=False)
+    assert main(["run", str(model_folder)]) == 1
+    err = capsys.readouterr().err
+    assert "toolchain is incomplete" in err
+    assert "snn-opt" in err
+
+
+@requires_toolchain
+def test_run_writes_results(model_folder):
+    assert main(["run", str(model_folder)]) == 0
+    results = model_folder / "build" / "results.csv"
+    assert results.is_file()
+    rows = [r for r in results.read_text().splitlines() if r]
+    assert len(rows) == 3  # 3 input timesteps
+    assert len(rows[0].split(",")) == 16  # CubaLIF(16) output width

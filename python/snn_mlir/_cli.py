@@ -9,11 +9,12 @@ writing any Python:
     snn-mlir codegen <folder> [-q]                   folder -> build/ C sources
     snn-mlir run <folder> [-q]                       compile + execute -> results.csv
 
-``export`` and ``codegen`` are wired; ``run`` announces itself and exits
-non-zero until its milestone lands.
+All three verbs are wired. ``run`` needs a from-source toolchain (snn-opt +
+the matching LLVM tools + a C compiler) and gates on it with a clear error.
 """
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,7 +40,11 @@ def _cmd_codegen(args: argparse.Namespace) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    raise NotImplementedError("`snn-mlir run` is not available yet")
+    from ._run import run_folder
+
+    results = run_folder(args.folder, quantize=args.quantize, platform=args.platform)
+    print(f"wrote {results}")
+    return 0
 
 
 def _add_quantize(p: argparse.ArgumentParser) -> None:
@@ -108,6 +113,12 @@ def main(argv: "list[str] | None" = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
+    except subprocess.CalledProcessError as exc:
+        tool = Path(exc.cmd[0] if isinstance(exc.cmd, list) else exc.cmd).name
+        print(f"snn-mlir: error: {tool} failed (exit {exc.returncode})", file=sys.stderr)
+        if exc.stderr:
+            sys.stderr.buffer.write(exc.stderr)
+        return 1
     except (NotImplementedError, ValueError, FileNotFoundError) as exc:
         print(f"snn-mlir: error: {exc}", file=sys.stderr)
         return 1
