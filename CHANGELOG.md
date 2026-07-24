@@ -1,4 +1,12 @@
 # Changelog
+## v0.4.0 (2026-07-24)
+
+### Feat
+
+- **run**: detect automatically MLIR and SNN-OPT installation
+- **examples**: autogenerate input.h now inputs can be provided as .csv files
+- **cli**: added command line integration for snn-mlir. export and codegen
+
 ## v0.3.1 (2026-07-21)
 
 ### Fix

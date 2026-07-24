@@ -47,11 +47,7 @@ my_model/
 Rules worth knowing before you hit an error message:
 
 - **Exactly one** `.nir` in the folder — two is an error, zero is an error.
-- `input.csv` has **no header**. Its **row count sets `n_steps`**; there is no `--n-steps` flag.
-- Its **column count must equal the network's input size**, or codegen fails with a clear
-  mismatch error.
-- Values are baked as `int8_t`. In float mode `main.c` casts them on the way in.
-- No `target.csv`, no config file. The folder contract is deliberately just these two files.
+- `input.csv` has **no header**. Its **row count sets `n_steps`**,
 
 Then it is the same command as the example:
 
