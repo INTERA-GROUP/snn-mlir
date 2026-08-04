@@ -1,4 +1,10 @@
 # Changelog
+## v0.5.0 (2026-08-04)
+
+### Feat
+
+- **api**: add check function to know if a nir model is compatible with the dialect
+
 ## v0.4.0 (2026-07-24)
 
 ### Feat
