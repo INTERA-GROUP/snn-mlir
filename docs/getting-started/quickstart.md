@@ -66,6 +66,7 @@ uv run snn-mlir export path/to/net.nir -o build/net.mlir -q
 
 ```
 snn-mlir --version
+snn-mlir check   <model.nir> [--json]
 snn-mlir export  <model.nir> [-o OUT.mlir] [-q]
 snn-mlir codegen <folder> [-q]
 snn-mlir run     <folder> [-q] [--platform linux]
@@ -73,9 +74,25 @@ snn-mlir run     <folder> [-q] [--platform linux]
 
 | Flag | Applies to | Default | Effect |
 |---|---|---|---|
-| `-q`, `--quantize` | all three | off | int8 weights + Q12 fixed-point neuron state, inserting `snn.rescale` where needed. Off means `f32`. |
+| `-q`, `--quantize` | `export`, `codegen`, `run` | off | int8 weights + Q12 fixed-point neuron state, inserting `snn.rescale` where needed. Off means `f32`. |
 | `-o`, `--output` | `export` | `<model>.mlir` beside the input | Destination `.mlir` path |
+| `--json` | `check` | off | Emit the full report as JSON instead of a table |
 | `--platform` | `run` | `linux` | Reserved for future targets; `linux` is the only value today |
+
+### Checking a model first
+
+`check` converts nothing — it applies the front-end's rules to every node and to the graph's
+topology, and reports all of it at once:
+
+```bash
+uv run snn-mlir check my_model/something.nir
+```
+
+Two things make it worth running before `export` on a model you did not train yourself. It
+reports **every** problem rather than stopping at the first, and it separates *node* verdicts
+from *graph* verdicts — a recurrent model, for instance, has nothing wrong with any individual
+node and is still rejected, which a per-node reading alone would miss. It exits non-zero when
+the model cannot be converted, and `--json` gives the same report to tooling.
 
 ### Quantized or float?
 

@@ -7,6 +7,15 @@ maps to a concrete extension point, and we'd be glad to help you tackle any of t
 
 We group them by which half of the project they live in.
 
+!!! tip "Which of these apply to *your* model?"
+    ```bash
+    snn-mlir check my_model.nir
+    ```
+    `check` applies every Python/NIR-frontend rule below to a specific graph and reports each
+    node it affects, without converting anything. See
+    [the CLI](getting-started/quickstart.md#4-the-full-cli-surface) or
+    [`snn_mlir.check`](python/api.md#snn_mlirchecksource-report).
+
 ## Python / NIR frontend
 
 !!! warning "Linear-chain graphs only"

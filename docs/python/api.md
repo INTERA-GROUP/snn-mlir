@@ -1,7 +1,9 @@
 # API reference
 
-The public surface of the `snn_mlir` package is small and comes in three flavors:
+The public surface of the `snn_mlir` package is small and comes in four flavors:
 
+- **Checking** — [`check`](#snn_mlirchecksource-report) answers whether a graph is supported
+  *before* converting it, reporting every node rather than raising on the first problem.
 - **One-shot** — [`to_mlir`](#snn_mlirto_mlirsource-quantizefalse-str) /
   [`export`](#snn_mlirexportsource-output_path-quantizefalse-none) turn a NIR graph straight
   into SNN dialect MLIR text.
@@ -27,6 +29,83 @@ The layer objects are [`NodeInfo`](nir-node.md) instances; both `NodeInfo` and t
 ```python
 import snn_mlir
 ```
+
+---
+
+## `snn_mlir.check(source) -> Report`
+
+Report whether a NIR graph can be converted, and what blocks it.
+
+Where `parse_graph` raises on the first thing it cannot handle, `check` runs the same rules over
+every node independently and collects the results. Node-level rules are not reimplemented: each
+node is handed to its real parser from `NODE_PARSERS`, and the exception it raises *is* the
+finding — so the report can never drift from the parser that produced it. Only the topology walk
+is restated, because it is structural rather than semantic.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `source` | `nir.NIRGraph \| str \| Path` | — | A NIR graph object, or a path to a `.nir` file (read with `nir.read`). |
+
+**Returns** — [`Report`](#report)
+
+!!! note "Never raises for a graph"
+    `check` is total: any graph produces a report, including one whose edges form a cycle (which
+    the `parse_graph` walk does not terminate on). Passing a *path* still reads it with
+    `nir.read`, which may raise if the file is missing or malformed.
+
+**Example**
+
+```python
+import snn_mlir
+
+report = snn_mlir.check("network.nir")
+if not report.ok:
+    for f in report.errors:
+        print(f"{f.node or 'graph'}: {f.message}")
+```
+
+### `Report`
+
+| Attribute | Type | Description |
+|---|---|---|
+| `ok` | `bool` | `True` when nothing of severity `error` was found — i.e. `parse_graph` would succeed. |
+| `nodes` | `tuple[NodeReport, ...]` | One entry per graph node, in the graph's own node order. |
+| `graph` | `tuple[Finding, ...]` | Whole-graph findings: topology, missing terminals, reachability. |
+| `order` | `tuple[str, ...]` | Node names along the `input` → `output` path, in data-flow order. Empty when the walk could not complete. |
+| `findings` | `list[Finding]` | Every finding, node-level first. |
+| `errors` / `warnings` | `list[Finding]` | `findings` split by severity. |
+| `as_dict()` | `dict` | JSON-serializable form, as emitted by `snn-mlir check --json`. |
+
+### `NodeReport`
+
+| Attribute | Type | Description |
+|---|---|---|
+| `name` | `str` | Node name as it appears in the graph. |
+| `type` | `str` | NIR node class name, e.g. `CubaLIF`. |
+| `role` | `str` | `terminal`, `synapse`, `neuron`, or `unsupported`. |
+| `ok` | `bool` | Whether this node alone can be parsed. |
+| `findings` | `tuple[Finding, ...]` | Why not, when `ok` is `False`. |
+
+### `Finding`
+
+| Attribute | Type | Description |
+|---|---|---|
+| `kind` | `str` | `unsupported_type`, `unsupported_parameter`, `nonlinear_topology`, `dead_end`, `cycle`, `missing_terminal`, `unreachable`, or `parser_error`. |
+| `message` | `str` | Human-readable sentence — for node findings, verbatim what the parser raised. |
+| `severity` | `str` | `error` (will not convert) or `warning` (converts, worth knowing). |
+| `node` | `str \| None` | The node it applies to, or `None` for whole-graph findings. |
+
+!!! tip "A model can be all-green per node and still unsupported"
+    Recurrence is the case to keep in mind: a recurrent edge gives some node two successors, but
+    every node still parses on its own. That is why topology is checked separately and reported
+    under `report.graph` rather than against any one node.
+
+!!! note "`parser_error` means a package bug, not an unsupported model"
+    Findings of kind `parser_error` come from a parser raising something other than a deliberate
+    rejection — a missing NIR attribute, say. They are reported rather than raised, because
+    totality is the function's contract, but they are worth [reporting upstream](../contributing.md).
 
 ---
 

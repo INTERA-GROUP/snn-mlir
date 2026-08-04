@@ -39,13 +39,33 @@ uv run snn-mlir run examples/snn_oxford -q
 # → examples/snn_oxford/build/results.csv   (one row per timestep)
 ```
 
-The three verbs:
+The four verbs:
 
 ```
+snn-mlir check   <model.nir> [--json]             # is this model supported? (no conversion)
 snn-mlir export  <model.nir> [-o OUT.mlir] [-q]   # NIR → SNN dialect MLIR
 snn-mlir codegen <folder> [-q]                    # folder → build/ (MLIR + C sources)
 snn-mlir run     <folder> [-q]                    # + compile, execute → results.csv
 ```
+
+`check` is the one to reach for first with an unfamiliar model. It reports every node against
+the front-end's rules — and the graph's topology separately — without converting anything, so
+you learn what is unsupported up front instead of on the first `export` that stops at it:
+
+```
+$ snn-mlir check brailernn.nir
+brailernn.nir — 7 nodes
+
+  ok    input       Input    terminal
+  ok    fc1         Linear   synapse
+  ...
+
+  ERROR   Node 'lif1.lif' has 2 successors — only linear-chain graphs are supported.
+
+not supported: 1 error.
+```
+
+It exits non-zero when the model cannot be converted, so it doubles as a CI gate.
 
 A model folder is exactly one `*.nir` plus an `input.csv` (one row per timestep, one column per input channel — the row count is what sets `N_STEPS`). `-q`/`--quantize` selects int8 weights and Q12 fixed-point state; the default is `f32`. Full walk-through: [Quick start](https://snn-mlir.readthedocs.io/en/latest/getting-started/quickstart/).
 
