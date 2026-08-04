@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 
 from ._api import export, mlir_from_layers, parse_graph, quantize_layers, to_mlir
+from ._check import Finding, NodeReport, Report, check
 from ._codegen import codegen_folder
 from ._run import run_folder, toolchain_available
 from .nodes import NODE_PARSERS, NodeInfo
@@ -15,8 +16,12 @@ except PackageNotFoundError:  # not installed (e.g. running from a bare checkout
 
 __all__ = [
     "NODE_PARSERS",
+    "Finding",
     "NodeInfo",
+    "NodeReport",
+    "Report",
     "__version__",
+    "check",
     "codegen_folder",
     "export",
     "mlir_from_layers",
