@@ -39,7 +39,7 @@ class CubaLIInfo(NodeInfo):
 
     @property
     def state_size_define(self) -> str:
-        return f"L{self.name}_CUBALI_SIZE"
+        return f"L{self.c_name}_CUBALI_SIZE"
 
     @property
     def d_scale(self) -> int:

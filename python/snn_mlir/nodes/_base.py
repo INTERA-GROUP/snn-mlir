@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
+from .._cname import c_identifier
+
 
 class NodeInfo(ABC):
     """Base class for parsed NIR nodes.
@@ -12,6 +14,17 @@ class NodeInfo(ABC):
     ``is_synapse`` / ``is_neuron`` without isinstance checks, keeping the graph
     walker independent of concrete node types.
     """
+
+    # ── naming ────────────────────────────────────────────────────────────────
+
+    @property
+    def c_name(self) -> str:
+        """The node name as a valid C identifier (see ``snn_mlir._cname``).
+
+        MLIR emission uses ``name`` verbatim (MLIR identifiers allow dots);
+        every C generator derives its variable/macro names from this instead.
+        """
+        return c_identifier(self.name)  # type: ignore[attr-defined]
 
     # ── classification traits ─────────────────────────────────────────────────
 

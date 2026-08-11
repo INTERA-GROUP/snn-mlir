@@ -41,7 +41,7 @@ class CubaLIFInfo(NodeInfo):
 
     @property
     def state_size_define(self) -> str:
-        return f"L{self.name}_CUBALIF_SIZE"
+        return f"L{self.c_name}_CUBALIF_SIZE"
 
     @property
     def d_scale(self) -> int:

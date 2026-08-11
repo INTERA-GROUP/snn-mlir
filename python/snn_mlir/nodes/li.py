@@ -37,7 +37,7 @@ class LIInfo(NodeInfo):
 
     @property
     def state_size_define(self) -> str:
-        return f"L{self.name}_LI_SIZE"
+        return f"L{self.c_name}_LI_SIZE"
 
     @property
     def d_scale(self) -> int:

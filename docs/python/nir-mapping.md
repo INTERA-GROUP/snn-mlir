@@ -123,6 +123,12 @@ ABI. It is, deterministically:
 Any `main.c`-style caller must mirror this exactly; a mismatch is silent memory corruption, not
 a link error.
 
+Because the ABI is positional, names never cross it — which matters for NIR node names that are
+not valid C identifiers (dotted submodule paths like `lif1.lif` are common). MLIR keeps the
+name verbatim; C generators use `NodeInfo.c_name`, the name with every non-identifier character
+replaced by `_` (`lif1.lif` → `lif1_lif`). Since that mangling can collide (`a.b` and `a_b`),
+`codegen` checks the graph's C names are unique up front and fails loudly if not.
+
 ## Current NIR coverage & pending nodes
 
 The supported set above covers feedforward, fully-connected networks. NIR node types that are

@@ -302,6 +302,31 @@ class GraphInfo:
         """The forward-path layers in execution order."""
         return [self.nodes[name] for name in self.order]
 
+    @property
+    def input_size(self) -> int:
+        """The network's input width: the entry synapse's input dimension.
+
+        The entry node (successor of ``input``) defines it — NOT the first
+        layer in ``order``, which for a recurrent graph is the recurrent
+        synapse. A leading non-synapse falls back to the first synapse in
+        order, as the old list-based consumers did.
+        """
+        entry = next((dst for src, dst in self.edges if src == "input"), None)
+        entry_layer = self.nodes.get(entry)
+        if entry_layer is None or not entry_layer.is_synapse:
+            entry_layer = next((layer for layer in self if layer.is_synapse), None)
+        if entry_layer is None:
+            raise ValueError("No synapse (weight) layer found in graph.")
+        return entry_layer.weight_shape[1]
+
+    @property
+    def output_size(self) -> int:
+        """The network's output width: the last neuron's state size."""
+        last_neuron = next((layer for layer in reversed(self.layers) if layer.is_neuron), None)
+        if last_neuron is None:
+            raise ValueError("No neuron layer found in graph.")
+        return last_neuron.state_size
+
     def predecessors(self, name: str) -> list[str]:
         return [src for src, dst in self.edges if dst == name]
 

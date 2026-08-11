@@ -173,14 +173,102 @@ def test_recurrent_emission_is_valid_and_lowers(tmp_path, quantize):
         )
 
 
-# ── the C harness does not lie ────────────────────────────────────────────────
+# ── the C harness mirrors the ABI ─────────────────────────────────────────────
 
 
-def test_codegen_folder_refuses_recurrent_models(tmp_path):
-    """codegen_folder's main.c cannot pass the prev-spikes buffers yet; it must
-    refuse rather than generate a harness that calls the kernel with too few
-    arguments."""
+def _write_model_folder(tmp_path, n_steps=8, seed=7):
+    """Golden graph + a Bernoulli spike input.csv; returns the input array."""
+    rng = np.random.default_rng(seed)
+    inputs = (rng.random((n_steps, 4)) < 0.5).astype(np.int8)
     nir.write(str(tmp_path / "model.nir"), _golden_graph())
-    (tmp_path / "input.csv").write_text("0,1,0,1\n1,0,1,0\n")
-    with pytest.raises(NotImplementedError, match="recurrent"):
-        snn_mlir.codegen_folder(tmp_path)
+    (tmp_path / "input.csv").write_text(
+        "".join(",".join(str(int(v)) for v in row) + "\n" for row in inputs),
+    )
+    return inputs
+
+
+def test_codegen_folder_harness_passes_prev_spikes(tmp_path):
+    """main.c must own a zero-initialized prev-spikes buffer per recurrent
+    neuron and pass it per the _emit positional ABI: right after that neuron's
+    own state descriptors, before any later layer's."""
+    _write_model_folder(tmp_path)
+    build = snn_mlir.codegen_folder(tmp_path, quantize=True)
+    main_c = (build / "main.c").read_text()
+
+    assert "int8_t prev_spikes_lif1[Llif1_CUBALIF_SIZE] = {0};" in main_c
+    call = main_c.split("_mlir_ciface_snn_forward_step(\n            ")[1].split(");")[0]
+    assert call == (
+        "&in_desc, &clif1_desc, &vlif1_desc, &prev_lif1_desc, &clif2_desc, &vlif2_desc, &out_desc"
+    )
+
+
+# ── host execution matches the numpy golden ───────────────────────────────────
+
+
+def _q12_reference(graph, inputs: np.ndarray) -> np.ndarray:
+    """Bit-exact numpy transcription of the quantized (Q12) kernel.
+
+    Integer arithmetic end to end, so — unlike a float reference — accumulation
+    order cannot perturb the result: the compiled binary must match exactly.
+    Reads every quantization parameter off the already-quantized ``graph``
+    (post rescale-insertion, so synapse w_scales are the shared ones).
+    """
+    fc1, lif1, w_rec, fc2, lif2 = (graph.nodes[n] for n in ("fc1", "lif1", "w_rec", "fc2", "lif2"))
+    w = {s.name: s.int8_weights.astype(np.int64) for s in (fc1, w_rec, fc2)}
+    shift = {s.name: 12 - s.w_scale for s in (fc1, w_rec, fc2)}
+
+    prev = np.zeros(lif1.size, dtype=np.int64)
+    c1 = v1 = np.zeros(lif1.size, dtype=np.int64)
+    c2 = v2 = np.zeros(lif2.size, dtype=np.int64)
+    out = []
+    for x in inputs.astype(np.int64):
+
+        def neuron(n, s, c, v):
+            c = ((n.cur_decay_scaled * c) >> 12) + s
+            v = ((n.vol_decay_scaled * v) >> 12) + c
+            spike = (v > n.threshold_scaled).astype(np.int64)
+            return c, np.where(spike > 0, 0, v), spike
+
+        merged = (w["fc1"] @ x << shift["fc1"]) + (w["w_rec"] @ prev << shift["w_rec"])
+        c1, v1, spk1 = neuron(lif1, merged, c1, v1)
+        c2, v2, spk2 = neuron(lif2, w["fc2"] @ spk1 << shift["fc2"], c2, v2)
+        prev = spk1
+        out.append(spk2)
+    return np.array(out, dtype=np.int64)
+
+
+@pytest.mark.skipif(
+    not snn_mlir.toolchain_available(),
+    reason="host toolchain not resolvable (build snn-opt, or set SNN_OPT/MLIR_DIR/CC)",
+)
+def test_run_recurrent_quantized_matches_numpy(tmp_path):
+    inputs = _write_model_folder(tmp_path)
+    results = snn_mlir.run_folder(tmp_path, quantize=True)
+    actual = np.loadtxt(results, delimiter=",", dtype=np.int64, ndmin=2)
+
+    graph = snn_mlir.parse_graph(tmp_path / "model.nir")
+    snn_mlir.quantize_layers(graph)
+    from snn_mlir._graph import insert_rescale_nodes
+
+    insert_rescale_nodes(graph)  # applies the shared fan-in w_scale in place
+    expected = _q12_reference(graph, inputs)
+    assert (actual == expected).all(), "quantized host run diverged from the Q12 reference"
+    assert expected.any(), "degenerate golden: the reference never spikes"
+
+
+@pytest.mark.skipif(
+    not snn_mlir.toolchain_available(),
+    reason="host toolchain not resolvable (build snn-opt, or set SNN_OPT/MLIR_DIR/CC)",
+)
+def test_run_recurrent_float_executes(tmp_path):
+    """The float path compiles, runs, and emits one spike row per timestep.
+
+    Bit-exactness against numpy is only asserted for the quantized path — float
+    accumulation order is toolchain-defined, and a reference that must match it
+    bit-for-bit would be flaky by construction.
+    """
+    inputs = _write_model_folder(tmp_path)
+    results = snn_mlir.run_folder(tmp_path, quantize=False)
+    actual = np.loadtxt(results, delimiter=",", dtype=np.int64, ndmin=2)
+    assert actual.shape == (inputs.shape[0], 3)
+    assert set(np.unique(actual)) <= {0, 1}

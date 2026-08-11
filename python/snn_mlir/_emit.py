@@ -40,17 +40,8 @@ def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
     graph = as_graph_info(layers)
     scalar_t = "i8" if quantize else "f32"
 
-    # ── infer network I/O sizes ───────────────────────────────────────────────
-    # The entry node (successor of 'input') defines the input size; a leading
-    # non-synapse falls back to the first synapse in order, as the old
-    # list-based emitter did.
-    entry = next((dst for src, dst in graph.edges if src == "input"), None)
-    entry_layer = graph.nodes.get(entry)
-    if entry_layer is None or not entry_layer.is_synapse:
-        entry_layer = next((layer for layer in graph if layer.is_synapse), None)
-    if entry_layer is None:
-        raise ValueError("No synapse (weight) layer found in graph.")
-    input_size = entry_layer.weight_shape[1]
+    # ── infer network I/O sizes (GraphInfo.input_size documents the entry rule) ──
+    input_size = graph.input_size
 
     last_neuron = next((layer for layer in reversed(graph) if layer.is_neuron), None)
     if last_neuron is None:

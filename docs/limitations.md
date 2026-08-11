@@ -24,8 +24,8 @@ We group them by which half of the project they live in.
     broken at the timestep boundary (see
     [Recurrence](python/nir-mapping.md#recurrence)). **Branching, residual connections, and
     any other cycle shape** are not yet supported. The C reference runtime (`codegen` / `run`)
-    does not yet pass the recurrent state buffers, so it refuses recurrent models — MLIR
-    emission only, for now.
+    allocates the recurrent state buffers itself, so recurrent models compile and run on the
+    host like feedforward ones.
 
 !!! warning "No convolutional / pooling nodes"
     NIR nodes such as `nir.Conv2d`, `nir.AvgPool2d`, and `nir.SumPool2d` operate on

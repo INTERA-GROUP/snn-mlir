@@ -20,6 +20,8 @@ import numpy as np
 
 from ._api import export as export_mlir
 from ._api import parse_graph, quantize_layers
+from ._cname import ensure_unique_c_names
+from ._graph import GraphInfo, as_graph_info
 from .nodes import NodeInfo
 
 
@@ -47,22 +49,14 @@ def codegen_folder(
         raise FileNotFoundError(f"input.csv not found in {folder}")
 
     layers = parse_graph(nir_path)
-    if layers.recurrent_edges:
-        # The MLIR emitter handles recurrence, but this C harness does not yet
-        # pass the previous-spikes buffers the kernel then expects — generating
-        # it anyway would compile a harness that calls the kernel with too few
-        # arguments. Loud failure until the harness learns the extra arguments.
-        raise NotImplementedError(
-            "codegen for recurrent models is not supported yet "
-            f"(recurrent edges: {layers.recurrent_edges})",
-        )
+    ensure_unique_c_names(layers)
     if quantize:
         quantize_layers(layers)
 
-    first_synapse = next(layer for layer in layers if layer.is_synapse)
-    last_neuron = next(layer for layer in reversed(layers) if layer.is_neuron)
-    input_size = first_synapse.weight_shape[1]
-    output_size = last_neuron.state_size
+    # The entry rule, not layers[0]: a recurrent graph's order starts with the
+    # recurrent synapse, whose width is NOT the network input width.
+    input_size = layers.input_size
+    output_size = layers.output_size
 
     build = folder / "build"
     build.mkdir(parents=True, exist_ok=True)
@@ -152,7 +146,7 @@ def generate_snn_header(
 
 
 def generate_main_c(
-    layers: list[NodeInfo],
+    layers: "list[NodeInfo] | GraphInfo",
     input_size: int,
     output_size: int,
     n_steps: int,
@@ -160,7 +154,16 @@ def generate_main_c(
     quantize: bool,
     index_bits: int = 64,
 ) -> None:
-    """Write main.c test harness (timestep loop, memref descriptors)."""
+    """Write main.c test harness (timestep loop, memref descriptors).
+
+    For a recurrent graph, the harness owns one zero-initialized
+    previous-spikes buffer per recurrent neuron and passes it per the
+    positional argument-order contract in ``_emit``'s module docstring
+    (immediately after that neuron's own state buffers). The kernel reads and
+    refreshes it; zero at t=0 means "no spikes before the first timestep".
+    """
+    graph = as_graph_info(layers)
+    recurrent_neurons = {neuron for neuron, _synapse in graph.recurrent_edges}
     idx_t = f"int{index_bits}_t"
     L: list[str] = []
 
@@ -181,7 +184,7 @@ def generate_main_c(
     L.append("")
 
     # ── extern function declaration ───────────────────────────────────────────
-    L += _extern_signature(layers, idx_t, quantize)
+    L += _extern_signature(graph, idx_t, quantize)
     L.append("")
 
     # ── helper constructors ───────────────────────────────────────────────────
@@ -205,14 +208,20 @@ def generate_main_c(
     L.append(f"    {out_t} output_buf[OUTPUT_SIZE];")
     L.append("")
 
-    # state arrays
+    # state arrays (+ one previous-spikes buffer per recurrent neuron)
     s_t = "int32_t" if quantize else "float"
-    for layer in layers:
+    spk_t = "int8_t" if quantize else "float"
+    for name in graph.order:
+        layer = graph.nodes[name]
         if layer.is_neuron:
             for sname in layer.state_names:
                 L.append(
-                    f"    {s_t} {sname}_{layer.name}[{layer.state_size_define}] = {{0}};",
+                    f"    {s_t} {sname}_{layer.c_name}[{layer.state_size_define}] = {{0}};",
                 )
+        if name in recurrent_neurons:
+            L.append(
+                f"    {spk_t} prev_spikes_{layer.c_name}[{layer.state_size_define}] = {{0}};",
+            )
     L.append("")
 
     # static descriptors
@@ -222,16 +231,24 @@ def generate_main_c(
 
     # Weights are baked into network.mlir as constant globals — no descriptors here.
 
-    # state descriptors
+    # state descriptors (+ previous-spikes descriptors, spike-typed)
     s_desc_t = "Memref1Di32" if quantize else "Memref1Df32"
     s_mk = "mk1d_i32" if quantize else "mk1d_f32"
-    for layer in layers:
+    spk_desc_t = "Memref1Di8" if quantize else "Memref1Df32"
+    spk_mk = "mk1d_i8" if quantize else "mk1d_f32"
+    for name in graph.order:
+        layer = graph.nodes[name]
         if layer.is_neuron:
             for sname in layer.state_names:
                 L.append(
-                    f"    {s_desc_t} {sname[0]}{layer.name}_desc"
-                    f" = {s_mk}({sname}_{layer.name}, {layer.state_size_define});",
+                    f"    {s_desc_t} {sname[0]}{layer.c_name}_desc"
+                    f" = {s_mk}({sname}_{layer.c_name}, {layer.state_size_define});",
                 )
+        if name in recurrent_neurons:
+            L.append(
+                f"    {spk_desc_t} prev_{layer.c_name}_desc"
+                f" = {spk_mk}(prev_spikes_{layer.c_name}, {layer.state_size_define});",
+            )
     L.append("")
 
     # timestep loop
@@ -245,12 +262,15 @@ def generate_main_c(
         L.append("            input_buf[i] = (float)L0_input[step][i];")
     L.append("")
 
-    # build call args
+    # build call args (the _emit positional ABI: states, then prev-spikes)
     call_args = ["&in_desc"]
-    for layer in layers:
+    for name in graph.order:
+        layer = graph.nodes[name]
         if layer.is_neuron:
             for sname in layer.state_names:
-                call_args.append(f"&{sname[0]}{layer.name}_desc")
+                call_args.append(f"&{sname[0]}{layer.c_name}_desc")
+        if name in recurrent_neurons:
+            call_args.append(f"&prev_{layer.c_name}_desc")
     call_args.append("&out_desc")
 
     L.append("        _mlir_ciface_snn_forward_step(")
@@ -288,25 +308,29 @@ def _memref_typedef(name: str, elem_t: str, rank: int, idx_t: str) -> list[str]:
     ]
 
 
-def _extern_signature(layers: list[NodeInfo], idx_t: str, quantize: bool) -> list[str]:
-    last_neuron = next((layer for layer in reversed(layers) if layer.is_neuron), None)
+def _extern_signature(graph: GraphInfo, idx_t: str, quantize: bool) -> list[str]:
+    last_neuron = next((layer for layer in reversed(graph.layers) if layer.is_neuron), None)
+    recurrent_neurons = {neuron for neuron, _synapse in graph.recurrent_edges}
     if quantize:
-        in_t, s_t = "Memref1Di8", "Memref1Di32"
+        in_t, s_t, spk_t = "Memref1Di8", "Memref1Di32", "Memref1Di8"
         out_t = (
             "Memref1Di32"
             if (last_neuron and last_neuron.output_element_type(True) == "i32")
             else "Memref1Di8"
         )
     else:
-        in_t, s_t = "Memref1Df32", "Memref1Df32"
+        in_t, s_t, spk_t = "Memref1Df32", "Memref1Df32", "Memref1Df32"
         out_t = "Memref1Df32"
 
     # Weights are constant globals inside the module, not function arguments.
     args = [f"{in_t} *input"]
-    for layer in layers:
+    for name in graph.order:
+        layer = graph.nodes[name]
         if layer.is_neuron:
             for sname in layer.state_names:
-                args.append(f"{s_t} *{sname}_{layer.name}")
+                args.append(f"{s_t} *{sname}_{layer.c_name}")
+        if name in recurrent_neurons:
+            args.append(f"{spk_t} *prev_spikes_{layer.c_name}")
     args.append(f"{out_t} *output")
 
     return [

@@ -41,7 +41,7 @@ class LIFInfo(NodeInfo):
 
     @property
     def state_size_define(self) -> str:
-        return f"L{self.name}_LIF_SIZE"
+        return f"L{self.c_name}_LIF_SIZE"
 
     @property
     def d_scale(self) -> int:

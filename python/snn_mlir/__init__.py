@@ -5,6 +5,7 @@ from importlib.metadata import version as _version
 
 from ._api import export, mlir_from_layers, parse_graph, quantize_layers, to_mlir
 from ._check import Finding, NodeReport, Report, check
+from ._cname import c_identifier, ensure_unique_c_names
 from ._codegen import codegen_folder
 from ._graph import GraphInfo
 from ._run import run_folder, toolchain_available
@@ -23,8 +24,10 @@ __all__ = [
     "NodeReport",
     "Report",
     "__version__",
+    "c_identifier",
     "check",
     "codegen_folder",
+    "ensure_unique_c_names",
     "export",
     "mlir_from_layers",
     "parse_graph",
