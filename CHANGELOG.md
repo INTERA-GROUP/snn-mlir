@@ -1,4 +1,15 @@
 # Changelog
+## v0.6.0 (2026-08-11)
+
+### Feat
+
+- **codegen**: create codegen for executing recurrent and dot named nodes
+- **compiler**: support for recurrent nodes in SNNs.
+
+### Fix
+
+- **cubalif**: reject nir models that do not follow discretization convention
+
 ## v0.5.0 (2026-08-04)
 
 ### Feat
