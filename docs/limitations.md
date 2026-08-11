@@ -31,6 +31,14 @@ We group them by which half of the project they live in.
     All neurons in a layer share the same decay constants and threshold (the parser enforces
     this). **Per-neuron parameter arrays** are not yet supported.
 
+!!! warning "Discrete-convention NIR exports only"
+    The parser recovers the export timestep as `dt = tau_mem / r` and assumes the discrete
+    input gain `k = w_in · dt / tau_syn` is 1, which holds when the exporter wrote
+    `r = tau_mem / dt` and `w_in = tau_syn / dt`. A `CubaLIF`/`CubaLI` node with `k ≠ 1`
+    (e.g. a file exported with true continuous time constants) is rejected with an error
+    naming the node and the computed `k`. See
+    [the discretization convention](python/nir-mapping.md#the-discretization-convention).
+
 ## MLIR dialect & lowering
 
 !!! warning "1-D activations only"

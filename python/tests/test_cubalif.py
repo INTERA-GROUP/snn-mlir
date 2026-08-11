@@ -76,3 +76,40 @@ def test_parse_cubalif_rejects_nonzero_v_reset():
     # model compiled clean and computed the wrong network. It must now reject it.
     with pytest.raises(ValueError, match="v_reset != 0 not supported"):
         parse_cubalif(_cubalif_node(0.3), "c0")
+
+
+# ── the discrete-convention (k = 1) guard ─────────────────────────────────────
+#
+# _cubalif_node has dt = tau_mem/r = 0.1 = tau_syn, so with the default w_in = 1
+# the input gain k = w_in*dt/tau_syn is exactly 1 — the discrete convention.
+
+
+def test_parse_cubalif_accepts_discrete_convention():
+    info = parse_cubalif(_cubalif_node(0.0), "c0")
+    assert info.size == 4
+
+
+def test_parse_cubalif_accepts_float32_roundoff_k():
+    # A real exporter computes w_in = tau_syn/dt in float32; k then differs from
+    # 1 by a few ulp. The guard must not reject its own convention over roundoff.
+    dt = 1e-4
+    tau_syn = np.full(4, 0.0123, dtype=np.float32)
+    tau_mem = np.full(4, 0.05, dtype=np.float32)
+    node = nir.CubaLIF(
+        tau_syn=tau_syn,
+        tau_mem=tau_mem,
+        r=(tau_mem / np.float32(dt)).astype(np.float32),
+        v_leak=np.zeros(4),
+        v_threshold=np.ones(4),
+        v_reset=np.zeros(4),
+        w_in=(tau_syn / np.float32(dt)).astype(np.float32),
+        input_type={"input": np.array([4])},
+    )
+    assert parse_cubalif(node, "c0").size == 4
+
+
+def test_parse_cubalif_rejects_k_not_one():
+    node = _cubalif_node(0.0)
+    node.w_in = np.full(4, 0.4)  # k = 0.4: continuous-style export
+    with pytest.raises(ValueError, match=r"CubaLIF 'c0'.*w_in\*dt/tau_syn = 0\.4 != 1"):
+        parse_cubalif(node, "c0")

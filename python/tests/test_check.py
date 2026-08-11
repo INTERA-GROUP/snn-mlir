@@ -133,6 +133,35 @@ def test_every_bad_node_is_reported_not_just_the_first():
     assert {f.node for f in report.errors} == {"n1", "n2"}
 
 
+def test_k_not_one_rejection_is_anchored_with_no_extra_wiring():
+    """The k=1 guard lives in the parser alone; check must surface it anchored.
+
+    There is deliberately no k-specific code in _check.py — the parser-reuse
+    design is what turns the new rejection into a finding for free.
+    """
+    neuron = _cubalif()
+    neuron.w_in = np.full(16, 0.4)  # k = 0.4: continuous-style export
+    g = _graph(
+        {
+            "input": nir.Input(input_type={"input": np.array([8])}),
+            "lin": _linear(),
+            "neuron": neuron,
+            "output": nir.Output(output_type={"output": np.array([16])}),
+        },
+        [("input", "lin"), ("lin", "neuron"), ("neuron", "output")],
+    )
+    report = check(g)
+    assert not report.ok
+
+    (finding,) = [f for f in report.findings if f.kind == "unsupported_parameter"]
+    assert finding.node == "neuron"
+    assert "input gain w_in*dt/tau_syn = 0.4" in finding.message
+    # Verbatim from the parser, not a copy maintained here.
+    with pytest.raises(ValueError) as exc:
+        parse_graph(g)
+    assert finding.message == str(exc.value)
+
+
 def test_non_uniform_parameters_are_rejected_per_node():
     neuron = _cubalif()
     neuron.v_threshold = np.linspace(0.5, 1.5, 16)  # per-neuron thresholds

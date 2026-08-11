@@ -1,6 +1,9 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from snn_mlir.nodes.cubali import CubaLIInfo
+import nir
+import numpy as np
+import pytest
+from snn_mlir.nodes.cubali import CubaLIInfo, parse_cubali
 
 
 def test_is_neuron_trait(cubali_float):
@@ -50,3 +53,31 @@ def test_intermediate_node_allocates(cubali_float):
     lines, out_var = cubali_float.emit_mlir("%in", False, False)
     assert "memref.alloca" in "\n".join(lines)
     assert out_var == "%voltage_out_2"
+
+
+# ── the discrete-convention (k = 1) guard ─────────────────────────────────────
+#
+# dt = tau_mem/r = 0.1 = tau_syn, so with the default w_in = 1 the input gain
+# k = w_in*dt/tau_syn is exactly 1 — the discrete convention.
+
+
+def _cubali_node() -> nir.CubaLI:
+    return nir.CubaLI(
+        tau_syn=np.full(4, 0.1),
+        tau_mem=np.full(4, 0.05),
+        r=np.full(4, 0.5),
+        v_leak=np.zeros(4),
+        input_type={"input": np.array([4])},
+    )
+
+
+def test_parse_cubali_accepts_discrete_convention():
+    info = parse_cubali(_cubali_node(), "v0")
+    assert info.size == 4
+
+
+def test_parse_cubali_rejects_k_not_one():
+    node = _cubali_node()
+    node.w_in = np.full(4, 2.5)  # k = 2.5: continuous-style export
+    with pytest.raises(ValueError, match=r"CubaLI 'v0'.*w_in\*dt/tau_syn = 2\.5 != 1"):
+        parse_cubali(node, "v0")

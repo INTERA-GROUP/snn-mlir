@@ -34,6 +34,31 @@ Integrate-and-fire variants (`CubaIF`, `IF`) are simply the leaky case with the 
 assumptions — e.g. `v_leak` must be 0, and `tau_syn`, `tau_mem`, `v_threshold` must be uniform
 across the layer (see [Limitations](../limitations.md)).
 
+### The discretization convention
+
+NIR is deliberately continuous — it describes neuron dynamics with physical time constants and
+"abstracts away" the simulator's timestep. A discrete-time exporter therefore has to smuggle its
+timestep into the file somewhere, and the ecosystem convention is to use `r` and `w_in` as the
+carriers:
+
+```
+r    = tau_mem / dt        # so the parser can recover dt = tau_mem / r
+w_in = tau_syn / dt        # so the discrete input gain k = w_in · dt / tau_syn = 1
+```
+
+The frontend relies on this. By the `dt = tau_mem / r` construction, the `LIF`/`LI` input gain
+and the `CubaLIF`/`CubaLI` *voltage*-stage gain are identically 1 for any `r`; the one remaining
+free parameter is the *current*-stage gain `k = w_in · dt / tau_syn`, and the emitted update
+`current += input` assumes `k = 1`. The parser checks exactly that: a `CubaLIF`/`CubaLI` node
+whose parameters give `k ≠ 1` (within float32 tolerance) is **rejected** with an error naming
+the node and the computed `k`, rather than silently compiling dynamics different from the ones
+trained.
+
+Files written with true continuous time constants (e.g. `r = 1`, `w_in = 1`) will fail this
+check. That is intentional for now: folding a `k ≠ 1` gain into the weights or threshold is a
+planned ingestion feature, and until it lands, rejecting is the honest alternative to
+miscompiling.
+
 ## Node mapping
 
 Each SNN op covers a family of NIR nodes:

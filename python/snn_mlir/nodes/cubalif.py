@@ -104,6 +104,18 @@ def parse_cubalif(node: nir.CubaLIF, name: str) -> CubaLIFInfo:
     threshold = float(node.v_threshold[0])
     size = int(node.input_type["input"][0])
 
+    # The discrete current update is current += k*input with k = w_in*dt/tau_syn.
+    # This emitter applies an implicit gain of 1, which is correct only when the
+    # exporter followed the discrete convention (w_in = tau_syn/dt, r = tau_mem/dt,
+    # so k = 1); anything else would silently compute different dynamics than
+    # trained. See docs/python/nir-mapping.md, "The discretization convention".
+    k = np.asarray(node.w_in) * dt / np.asarray(node.tau_syn)
+    if not np.allclose(k, 1.0):
+        raise ValueError(
+            f"CubaLIF '{name}': input gain w_in*dt/tau_syn = {float(np.max(k)):.6g} != 1; "
+            "only discrete-convention NIR exports (w_in = tau_syn/dt) are supported"
+        )
+
     if not np.allclose(node.v_leak, 0):
         raise ValueError("v_leak must be 0 for CubaLIF")
     if not np.allclose(node.v_reset, 0):
