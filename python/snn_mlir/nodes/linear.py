@@ -73,11 +73,21 @@ class LinearInfo(NodeInfo):
             abs(qmax / max_w) if max_w != 0 else float("inf"),
             abs(qmin / min_w) if min_w != 0 else float("inf"),
         )
-        self._w_scale = min(int(np.floor(np.log2(ratio))), _D_SCALE)
-        self._quantized_weights = np.round(w * (2**self._w_scale)).astype(np.int8)
+        self.requantize(min(int(np.floor(np.log2(ratio))), _D_SCALE))
+
+    def requantize(self, w_scale: int) -> None:
+        """Re-quantize weights (and bias) at an externally chosen ``w_scale``.
+
+        Recomputes from the float weights, so calling it repeatedly is safe.
+        Only ever called with a scale at or below the natural one ``quantize``
+        picked (synapses feeding the same neuron share the minimum of their
+        scales), so the int8 range cannot overflow.
+        """
+        self._w_scale = w_scale
+        self._quantized_weights = np.round(self.weights * (2**w_scale)).astype(np.int8)
         if self.bias is not None:
             self._quantized_bias = np.round(
-                self.bias * (2**self._w_scale),
+                self.bias * (2**w_scale),
             ).astype(np.int32)
 
     # ── MLIR module-level constants ───────────────────────────────────────────

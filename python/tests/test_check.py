@@ -182,12 +182,10 @@ def test_non_uniform_parameters_are_rejected_per_node():
 # ── topology ──────────────────────────────────────────────────────────────────
 
 
-def test_recurrent_graph_is_rejected_though_every_node_is_fine():
-    """The case node-level checking alone cannot catch.
-
-    A recurrent edge gives a node two successors. Each node still parses, so a
-    per-node check reports all-green for a model that cannot be converted.
-    """
+def test_canonical_recurrence_is_supported_and_reported_as_info():
+    """A neuron ⇄ recurrent-synapse loop converts — the edge is broken at the
+    timestep boundary — and the checker says so as an info finding, not an
+    error, anchored to the synapse that will read the state buffer."""
     g = _graph(
         {
             "input": nir.Input(input_type={"input": np.array([8])}),
@@ -206,18 +204,23 @@ def test_recurrent_graph_is_rejected_though_every_node_is_fine():
     )
     report = check(g)
 
-    assert all(n.ok for n in report.nodes)  # every node individually fine
-    assert not report.ok  # the graph is not
+    assert all(n.ok for n in report.nodes)
+    assert report.ok
+    assert report.errors == []
 
-    (finding,) = [f for f in report.graph if f.kind == "nonlinear_topology"]
-    assert finding.node == "neuron"
-    with pytest.raises(ValueError) as exc:
-        parse_graph(g)
-    assert finding.message == str(exc.value)
+    (finding,) = [f for f in report.graph if f.kind == "recurrent_edge"]
+    assert finding.severity == "info"
+    assert finding.node == "rec"
+    assert "'neuron'" in finding.message and "'rec'" in finding.message
+    # The recurrent synapse runs first (it reads last timestep's spikes).
+    assert report.order == ("input", "rec", "lin", "neuron", "output")
+    parse_graph(g)  # and it really does convert
 
 
-def test_cycle_terminates():
-    """parse_graph would spin forever here; check must return."""
+def test_unbreakable_cycle_terminates_and_is_an_error():
+    """A synapse→synapse loop has no neuron→synapse edge to break. The old
+    walk would spin forever here; both the checker and parse_graph must
+    terminate and say the same thing."""
     g = _graph(
         {
             "input": nir.Input(input_type={"input": np.array([8])}),
@@ -230,6 +233,11 @@ def test_cycle_terminates():
     report = check(g)
     assert not report.ok
     assert [f.kind for f in report.graph] == ["cycle"]
+
+    (finding,) = report.graph
+    with pytest.raises(ValueError) as exc:
+        parse_graph(g)
+    assert finding.message == str(exc.value)
 
 
 def test_dead_end_is_reported():

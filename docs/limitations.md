@@ -18,9 +18,14 @@ We group them by which half of the project they live in.
 
 ## Python / NIR frontend
 
-!!! warning "Linear-chain graphs only"
-    The graph walker (`_graph.parse_graph`) follows a single path from `input` to `output`.
-    **Branching, residual connections, and recurrent edges** are not yet supported.
+!!! warning "Linear chains plus canonical self-recurrence only"
+    The graph walker (`_graph.parse_graph`) accepts a single path from `input` to `output`,
+    optionally with the canonical SNN self-recurrence — a neuron ⇄ recurrent-synapse loop,
+    broken at the timestep boundary (see
+    [Recurrence](python/nir-mapping.md#recurrence)). **Branching, residual connections, and
+    any other cycle shape** are not yet supported. The C reference runtime (`codegen` / `run`)
+    does not yet pass the recurrent state buffers, so it refuses recurrent models — MLIR
+    emission only, for now.
 
 !!! warning "No convolutional / pooling nodes"
     NIR nodes such as `nir.Conv2d`, `nir.AvgPool2d`, and `nir.SumPool2d` operate on

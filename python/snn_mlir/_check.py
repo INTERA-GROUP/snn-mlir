@@ -11,8 +11,8 @@ the caller a string instead of the node the string is about.
 where exactly?* — by running the same rules over every node independently and
 collecting the results. Three properties make it usable as a library:
 
-* **Total.** It does not raise for a graph, whatever the graph contains, and it
-  terminates on cyclic edge sets (which the ``parse_graph`` walk does not).
+* **Total.** It does not raise for a graph, whatever the graph contains,
+  cyclic edge sets included.
 * **Complete.** Every node is reported, not just the first failing one.
 * **Anchored.** Findings name the node or edge they belong to, so a caller can
   paint them onto a rendering of the graph rather than printing a sentence.
@@ -30,10 +30,12 @@ from pathlib import Path
 
 import nir
 
+from . import _graph
 from .nodes import NODE_PARSERS
 
 ERROR = "error"
 WARNING = "warning"
+INFO = "info"
 
 #: NIR graph terminals. They have no parser and never will — ``parse_graph``
 #: starts at ``input`` and stops at ``output`` without parsing either — so they
@@ -47,15 +49,16 @@ class Finding:
 
     kind: str
     """Machine-readable slug: ``unsupported_type``, ``unsupported_parameter``,
-    ``nonlinear_topology``, ``dead_end``, ``cycle``, ``missing_terminal``,
-    ``unreachable``, ``parser_error``."""
+    ``nonlinear_topology``, ``unsupported_fan_in``, ``dead_end``, ``cycle``,
+    ``recurrent_edge``, ``missing_terminal``, ``unreachable``, ``parser_error``."""
 
     message: str
     """Human-readable sentence. For node-level findings this is verbatim the
     message the parser raised, so it matches what a failed conversion prints."""
 
     severity: str = ERROR
-    """``error`` (will not compile) or ``warning`` (compiles, worth knowing)."""
+    """``error`` (will not compile), ``warning`` (compiles, worth knowing), or
+    ``info`` (a structural fact the conversion handles — a recurrent edge)."""
 
     node: str | None = None
     """Name of the node this applies to, or ``None`` for whole-graph findings."""
@@ -180,94 +183,42 @@ def _check_node(name: str, node: object) -> NodeReport:
     return NodeReport(name=name, type=type(node).__name__, role=_role(node, parsed), ok=True)
 
 
-def _check_topology(graph: nir.NIRGraph) -> tuple[tuple[Finding, ...], tuple[str, ...]]:
-    """Restate ``parse_graph``'s walk, reporting instead of raising.
+def _check_topology(
+    graph: nir.NIRGraph,
+    roles: dict[str, str],
+) -> tuple[tuple[Finding, ...], tuple[str, ...]]:
+    """Run ``parse_graph``'s own topology analysis, reporting instead of raising.
 
-    Returns the findings and the walk order, which is a by-product of the same
-    traversal and the order callers actually want to display the graph in.
+    Returns the findings and the forward execution order, which is a by-product
+    of the same analysis and the order callers actually want to display the
+    graph in. A canonical recurrence is not an error: the analysis breaks the
+    neuron→synapse edge at the timestep boundary and reports it as an
+    ``info``-severity ``recurrent_edge`` finding.
 
-    Adds a cycle guard the walk itself lacks: ``parse_graph`` would spin forever
-    on a closed loop of single-successor edges, and a checker that hangs is worse
-    than one that is wrong.
+    Delegating to :func:`_graph.analyze_topology` (rather than restating the
+    walk) is what keeps the two from drifting: the sentence this reports is the
+    sentence a failed conversion raises. The analysis also terminates on cyclic
+    edge sets the old walk would spin on.
     """
-    adj: dict[str, list[str]] = {}
-    for src, dst in graph.edges:
-        adj.setdefault(src, []).append(dst)
+    topo = _graph.analyze_topology(list(graph.edges), roles)
 
-    findings: list[Finding] = []
-    for terminal in ("input", "output"):
-        if terminal not in graph.nodes:
-            findings.append(
-                Finding(
-                    kind="missing_terminal",
-                    message=f"Graph has no '{terminal}' node; the walk from 'input' to "
-                    "'output' cannot be made.",
-                ),
-            )
-    if findings:
+    findings = [
+        Finding(kind=i.kind, message=i.message, severity=i.severity, node=i.node)
+        for i in topo.issues
+    ]
+    findings += [
+        Finding(
+            kind="recurrent_edge",
+            message=f"Recurrent edge '{neuron}' -> '{synapse}': '{synapse}' reads "
+            f"'{neuron}' spikes from the previous timestep.",
+            severity=INFO,
+            node=synapse,
+        )
+        for neuron, synapse in topo.recurrent_edges
+    ]
+    if any(f.severity == ERROR for f in findings):
         return tuple(findings), ()
-
-    visited: list[str] = []
-    seen: set[str] = set()
-    current = "input"
-    while current != "output":
-        seen.add(current)
-        visited.append(current)
-        nexts = adj.get(current, [])
-        if len(nexts) > 1:
-            # Worded exactly as parse_graph words it, so the checker and a failed
-            # conversion say the same sentence about the same graph.
-            findings.append(
-                Finding(
-                    kind="nonlinear_topology",
-                    message=f"Node '{current}' has {len(nexts)} successors — "
-                    "only linear-chain graphs are supported.",
-                    node=current,
-                ),
-            )
-            return tuple(findings), ()
-        if not nexts:
-            findings.append(
-                Finding(
-                    kind="dead_end",
-                    message=f"Node '{current}' has no successors — the graph never "
-                    "reaches 'output'.",
-                    node=current,
-                ),
-            )
-            return tuple(findings), ()
-        current = nexts[0]
-        if current in seen:
-            findings.append(
-                Finding(
-                    kind="cycle",
-                    message=f"Edges form a cycle back to '{current}' — "
-                    "only linear-chain graphs are supported.",
-                    node=current,
-                ),
-            )
-            return tuple(findings), ()
-
-    # The walk completed, so "not visited" is now a meaningful statement. These
-    # nodes are silently ignored by parse_graph: the model converts, but not all
-    # of it does, which is worth saying out loud.
-    #
-    # Terminals are skipped, and not only the 'output' the walk stops at: NIRGraph
-    # synthesizes an Input/Output pair around any disconnected component, so a
-    # single stray node otherwise reports as three unreachable ones — two of which
-    # the user never wrote.
-    for name, node in graph.nodes.items():
-        if name not in seen and not isinstance(node, TERMINAL_TYPES):
-            findings.append(
-                Finding(
-                    kind="unreachable",
-                    message=f"Node '{name}' is not on the path from 'input' to 'output' "
-                    "and will be ignored.",
-                    severity=WARNING,
-                    node=name,
-                ),
-            )
-    return tuple(findings), (*visited, "output")
+    return tuple(findings), ("input", *topo.order, "output")
 
 
 def check(source: "nir.NIRGraph | str | Path") -> Report:
@@ -275,8 +226,10 @@ def check(source: "nir.NIRGraph | str | Path") -> Report:
 
     Every node is checked independently against its real parser and the topology
     is checked separately, so a graph whose nodes are all individually fine can
-    still be reported as unsupported — a recurrent connection is exactly that
-    case.
+    still be reported as unsupported — an unbreakable cycle is exactly that
+    case. A canonical self-recurrence (neuron ⇄ recurrent synapse) is supported
+    and reported as an ``info``-severity ``recurrent_edge`` finding, not an
+    error.
 
     Args:
         source: A nir.NIRGraph object, or a path to a .nir file.
@@ -302,6 +255,7 @@ def check(source: "nir.NIRGraph | str | Path") -> Report:
         source = nir.read(str(source))
 
     nodes = tuple(_check_node(name, node) for name, node in source.nodes.items())
-    graph, order = _check_topology(source)
+    roles = {n.name: n.role for n in nodes}
+    graph, order = _check_topology(source, roles)
     ok = all(n.ok for n in nodes) and not any(f.severity == ERROR for f in graph)
     return Report(ok=ok, nodes=nodes, graph=graph, order=order)

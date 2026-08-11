@@ -5,11 +5,12 @@ from pathlib import Path
 import nir as _nir
 
 from . import _emit, _graph
+from ._graph import GraphInfo
 from .nodes import NodeInfo
 
 
-def parse_graph(source: "_nir.NIRGraph | str | Path") -> list[NodeInfo]:
-    """Walk a NIR graph and return its ordered list of layers.
+def parse_graph(source: "_nir.NIRGraph | str | Path") -> GraphInfo:
+    """Walk a NIR graph and return its layers, ordered for one forward step.
 
     This is the structured entry point: it stops after parsing so callers can
     inspect, quantize, or feed the :class:`~snn_mlir.nodes.NodeInfo` objects to
@@ -19,7 +20,11 @@ def parse_graph(source: "_nir.NIRGraph | str | Path") -> list[NodeInfo]:
         source: A nir.NIRGraph object, or a path to a .nir file.
 
     Returns:
-        An ordered list of NodeInfo layers (no quantization applied).
+        A :class:`~snn_mlir.GraphInfo` (no quantization applied). Iterating or
+        indexing it yields the forward-path layers in execution order, so code
+        written against the former ``list[NodeInfo]`` return keeps working;
+        ``.edges`` / ``.recurrent_edges`` carry the structure recurrent graphs
+        need.
 
     """
     if isinstance(source, (str, Path)):
@@ -27,7 +32,7 @@ def parse_graph(source: "_nir.NIRGraph | str | Path") -> list[NodeInfo]:
     return _graph.parse_graph(source)
 
 
-def quantize_layers(layers: list[NodeInfo]) -> None:
+def quantize_layers(layers: "list[NodeInfo] | GraphInfo") -> None:
     """Compute each layer's quantization parameters in-place.
 
     Mutates the layers, so call it at most once per list (quantization is not
@@ -36,7 +41,11 @@ def quantize_layers(layers: list[NodeInfo]) -> None:
     _graph.quantize_layers(layers)
 
 
-def mlir_from_layers(layers: list[NodeInfo], *, quantize: bool = False) -> str:
+def mlir_from_layers(
+    layers: "list[NodeInfo] | GraphInfo",
+    *,
+    quantize: bool = False,
+) -> str:
     """Emit SNN dialect MLIR text from a pre-parsed list of layers.
 
     Args:

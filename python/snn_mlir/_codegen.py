@@ -47,6 +47,15 @@ def codegen_folder(
         raise FileNotFoundError(f"input.csv not found in {folder}")
 
     layers = parse_graph(nir_path)
+    if layers.recurrent_edges:
+        # The MLIR emitter handles recurrence, but this C harness does not yet
+        # pass the previous-spikes buffers the kernel then expects — generating
+        # it anyway would compile a harness that calls the kernel with too few
+        # arguments. Loud failure until the harness learns the extra arguments.
+        raise NotImplementedError(
+            "codegen for recurrent models is not supported yet "
+            f"(recurrent edges: {layers.recurrent_edges})",
+        )
     if quantize:
         quantize_layers(layers)
 

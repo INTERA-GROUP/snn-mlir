@@ -7,7 +7,7 @@ The public surface of the `snn_mlir` package is small and comes in four flavors:
 - **One-shot** — [`to_mlir`](#snn_mlirto_mlirsource-quantizefalse-str) /
   [`export`](#snn_mlirexportsource-output_path-quantizefalse-none) turn a NIR graph straight
   into SNN dialect MLIR text.
-- **Structured** — [`parse_graph`](#snn_mlirparse_graphsource-listnodeinfo),
+- **Structured** — [`parse_graph`](#snn_mlirparse_graphsource-graphinfo),
   [`quantize_layers`](#snn_mlirquantize_layerslayers-none), and
   [`mlir_from_layers`](#snn_mlirmlir_from_layerslayers-quantizefalse-str) expose the pipeline
   one stage at a time, so you can inspect or quantize the parsed layers — or feed them to your
@@ -24,7 +24,9 @@ The layer objects are [`NodeInfo`](nir-node.md) instances; both `NodeInfo` and t
     Synapse weights (and biases) are emitted as module-level `memref.global "private" constant`
     values and read back with `memref.get_global`, rather than passed as function arguments. The
     generated `@snn_forward_step` function therefore takes only the runtime input, the carried
-    neuron state, and the output buffer — the compiled module is self-contained.
+    neuron state (including, for a recurrent neuron, its previous-timestep spike buffer — see
+    [Recurrence](nir-mapping.md#recurrence)), and the output buffer — the compiled module is
+    self-contained.
 
 ```python
 import snn_mlir
@@ -51,9 +53,8 @@ is restated, because it is structural rather than semantic.
 **Returns** — [`Report`](#report)
 
 !!! note "Never raises for a graph"
-    `check` is total: any graph produces a report, including one whose edges form a cycle (which
-    the `parse_graph` walk does not terminate on). Passing a *path* still reads it with
-    `nir.read`, which may raise if the file is missing or malformed.
+    `check` is total: any graph produces a report, cyclic edge sets included. Passing a *path*
+    still reads it with `nir.read`, which may raise if the file is missing or malformed.
 
 **Example**
 
@@ -92,15 +93,18 @@ if not report.ok:
 
 | Attribute | Type | Description |
 |---|---|---|
-| `kind` | `str` | `unsupported_type`, `unsupported_parameter`, `nonlinear_topology`, `dead_end`, `cycle`, `missing_terminal`, `unreachable`, or `parser_error`. |
+| `kind` | `str` | `unsupported_type`, `unsupported_parameter`, `nonlinear_topology`, `unsupported_fan_in`, `dead_end`, `cycle`, `recurrent_edge`, `missing_terminal`, `unreachable`, or `parser_error`. |
 | `message` | `str` | Human-readable sentence — for node findings, verbatim what the parser raised. |
-| `severity` | `str` | `error` (will not convert) or `warning` (converts, worth knowing). |
+| `severity` | `str` | `error` (will not convert), `warning` (converts, worth knowing), or `info` (a structural fact the conversion handles). |
 | `node` | `str \| None` | The node it applies to, or `None` for whole-graph findings. |
 
 !!! tip "A model can be all-green per node and still unsupported"
-    Recurrence is the case to keep in mind: a recurrent edge gives some node two successors, but
-    every node still parses on its own. That is why topology is checked separately and reported
-    under `report.graph` rather than against any one node.
+    An unbreakable cycle is the case to keep in mind: every node parses on its own, but the
+    edges cannot be ordered. That is why topology is checked separately and reported under
+    `report.graph` rather than against any one node. The one cycle that *is* supported — the
+    canonical neuron ⇄ recurrent-synapse loop (see
+    [Recurrence](nir-mapping.md#recurrence)) — appears as an `info`-severity `recurrent_edge`
+    finding anchored to the recurrent synapse, and does not affect `ok`.
 
 !!! note "`parser_error` means a package bug, not an unsupported model"
     Findings of kind `parser_error` come from a parser raising something other than a deliberate
@@ -159,11 +163,11 @@ snn_mlir.export("network.nir", "build/network.mlir", quantize=True)
 
 ---
 
-## `snn_mlir.parse_graph(source) -> list[NodeInfo]`
+## `snn_mlir.parse_graph(source) -> GraphInfo`
 
-Walk a NIR graph and return its ordered list of layers, stopping after parsing. Use this when
-you need the [`NodeInfo`](nir-node.md) objects themselves — to inspect them, or to drive your own
-code generation — rather than just the MLIR text.
+Walk a NIR graph and return its layers ordered for one forward timestep, stopping after parsing.
+Use this when you need the [`NodeInfo`](nir-node.md) objects themselves — to inspect them, or to
+drive your own code generation — rather than just the MLIR text.
 
 **Parameters**
 
@@ -171,7 +175,22 @@ code generation — rather than just the MLIR text.
 |---|---|---|---|
 | `source` | `nir.NIRGraph \| str \| Path` | — | A NIR graph object, or a path to a `.nir` file. |
 
-**Returns** — `list[NodeInfo]`: the ordered layers, with **no** quantization applied.
+**Returns** — [`GraphInfo`](#graphinfo): the parsed graph, with **no** quantization applied.
+
+### `GraphInfo`
+
+The layers plus the structure connecting them. Iterating, indexing, or `len()`-ing a
+`GraphInfo` yields the forward-path layers in execution order, so code written against the
+former `list[NodeInfo]` return keeps working unchanged.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `nodes` | `dict[str, NodeInfo]` | Parsed layers keyed by NIR node name (terminals excluded). |
+| `order` | `list[str]` | Node names in forward (topological) execution order. A recurrent synapse comes first — it reads the previous timestep's spikes. |
+| `edges` | `list[tuple[str, str]]` | Forward edges after cycle breaking, `input`/`output` terminals included. |
+| `recurrent_edges` | `list[tuple[str, str]]` | Broken neuron→synapse edges: for each `(neuron, synapse)`, the synapse reads the neuron's previous-timestep spikes (see [Recurrence](nir-mapping.md#recurrence)). Empty for a feedforward chain. |
+| `layers` | `list[NodeInfo]` | The forward-path layers in execution order (what iteration yields). |
+| `predecessors(name)` / `successors(name)` | `list[str]` | Neighbors of a node along `edges`. |
 
 ---
 
@@ -187,7 +206,7 @@ Compute each layer's quantization parameters (int8 weight scales, Q12 neuron sta
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `layers` | `list[NodeInfo]` | — | Layers from `parse_graph`, mutated in place. |
+| `layers` | `GraphInfo \| list[NodeInfo]` | — | Layers from `parse_graph`, mutated in place. |
 
 **Returns** — `None`.
 
@@ -202,7 +221,7 @@ synthetic `snn.rescale` nodes before emission.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `layers` | `list[NodeInfo]` | — | Layers from `parse_graph` (run through `quantize_layers` first if `quantize=True`). |
+| `layers` | `GraphInfo \| list[NodeInfo]` | — | Layers from `parse_graph` (run through `quantize_layers` first if `quantize=True`). A plain list is treated as a linear chain. |
 | `quantize` | `bool` | `False` | Must match how `layers` were quantized: `True` emits int8 / Q12 (with `snn.rescale`), `False` emits `f32`. |
 
 **Returns** — `str`: the complete MLIR module.

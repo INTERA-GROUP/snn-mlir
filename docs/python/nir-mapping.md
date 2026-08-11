@@ -77,6 +77,52 @@ Each SNN op covers a family of NIR nodes:
 | `nir.I` | `snn.li` | `decay = 1.0` (no leak) |
 | _(internal)_ | `snn.rescale` | Inserted between `snn.linear` and neuron ops during quantized export; no NIR equivalent |
 
+## Recurrence
+
+The one supported cycle is the canonical SNN self-recurrence: a neuron whose spikes feed a
+recurrent synapse that projects back onto the same neuron —
+
+```
+input → fc1 → lif1 → fc2 → …
+         ↑      ↓
+       w_rec ← ─┘        (lif1 → w_rec → lif1)
+```
+
+The graph walk breaks the **neuron→synapse** edge (`lif1 → w_rec`) at the timestep boundary:
+`w_rec` reads the *previous* timestep's spikes from a dedicated state buffer, which keeps that
+buffer spike-typed (`i8` quantized / `f32` float). This is the standard discrete-time SNN
+reading of a recurrent connection. Any other cycle — a self-loop, a longer loop, a loop without
+a neuron→synapse edge — is rejected with an error.
+
+Three consequences in the emitted MLIR:
+
+1. **Execution order.** The recurrent synapse runs *first* in the timestep (it depends only on
+   stored state), so for the graph above the order is `w_rec, fc1, lif1, fc2, …` —
+   `GraphInfo.order` is the authority.
+2. **Fan-in merge.** The neuron now has two inputs (`fc1` and `w_rec`). Each edge gets its own
+   `snn.rescale` in quantized mode, and the branches are summed elementwise by a
+   `linalg.generic` (`arith.addi` in Q12; `arith.addf` in float) just before the neuron.
+   Synapses feeding the same neuron are clamped to one shared `w_scale` (the minimum of the
+   candidates) — a uniform fan-in scale is what lets any backend fuse the merge without
+   changing the result, since the rescale's left shift distributes over the addition.
+3. **State buffer + copy.** The previous-spikes buffer is a function argument
+   (`%prev_spikes_<neuron>`), and the function ends with a `memref.copy` of the neuron's fresh
+   spikes into it for the next call.
+
+### The argument-order contract
+
+The generated `@snn_forward_step` is called positionally from C, so its argument order is an
+ABI. It is, deterministically:
+
+1. `%input`
+2. for each layer in `GraphInfo.order`: its state buffers (e.g. `%current_<n>`,
+   `%voltage_<n>`), and — immediately after them, when the layer is a recurrent neuron — its
+   previous-spikes buffer `%prev_spikes_<n>`
+3. `%output`
+
+Any `main.c`-style caller must mirror this exactly; a mismatch is silent memory corruption, not
+a link error.
+
 ## Current NIR coverage & pending nodes
 
 The supported set above covers feedforward, fully-connected networks. NIR node types that are
