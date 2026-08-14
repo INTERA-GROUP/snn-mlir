@@ -1,4 +1,10 @@
 # Changelog
+## v0.6.1 (2026-08-14)
+
+### Fix
+
+- **pass**: resolve overflow in voltage state for neurons. Now computed at 64bit
+
 ## v0.6.0 (2026-08-11)
 
 ### Feat
