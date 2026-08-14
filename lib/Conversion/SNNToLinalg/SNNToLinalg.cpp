@@ -29,6 +29,27 @@ static bool isFloatMemRef(Value v) {
 }
 
 //===----------------------------------------------------------------------===//
+//  Helper: the Q12 decay step  (decay * state) >> d_scale
+//
+//  Both factors are Q12, so the product is Q24 and overflows i32 while the
+//  state itself is still far from full. It is therefore computed in i64 and
+//  truncated back, which puts the usable bound on the state width itself
+//  (|state| < 2^31) instead of 2^31 >> d_scale. State memrefs and the kernel
+//  ABI stay i32. Arithmetic width is a property of the dialect, not of the
+//  target: host and RV32 must stay numerically identical.
+//===----------------------------------------------------------------------===//
+static Value decayMul(OpBuilder &b, Location loc, int64_t decayInt, Value state,
+                      int64_t dScale) {
+  Type i64 = b.getI64Type();
+  Value dc   = arith::ConstantOp::create(b, loc, i64, b.getI64IntegerAttr(decayInt));
+  Value st   = arith::ExtSIOp::create(b, loc, i64, state);
+  Value prod = arith::MulIOp::create(b, loc, dc, st);
+  Value sh   = arith::ConstantOp::create(b, loc, i64, b.getI64IntegerAttr(dScale));
+  return arith::TruncIOp::create(b, loc, state.getType(),
+                                 arith::ShRSIOp::create(b, loc, prod, sh));
+}
+
+//===----------------------------------------------------------------------===//
 //  Pattern: snn.linear → linalg.matvec (float) or linalg.generic (int)
 //      Uses linalg.generic since w=i8; in=i8; out=i16/i32
 //===----------------------------------------------------------------------===//
@@ -240,7 +261,7 @@ struct LowerCubaLIF : public OpRewritePattern<snn::CubaLIFOp> {
       int64_t volDecayInt = op.getVolDecayInt();
       int64_t thresholdInt = op.getThresholdInt();
 
-      // i32 throughout: matches RV32 target; Q12 dynamics bound state below overflow.
+      // State stays i32; only the decay product widens (see decayMul).
       Type i32 = rewriter.getI32Type();
       auto outElem =
           cast<MemRefType>(output.getType()).getElementType(); // i8
@@ -251,20 +272,13 @@ struct LowerCubaLIF : public OpRewritePattern<snn::CubaLIFOp> {
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value s = args[0], c = args[1], v = args[2];
 
-            Value shiftVal = arith::ConstantOp::create(b,
-                loc, i32, b.getI32IntegerAttr(dScale));
-
             // c_new = (cur_decay * c) >> d_scale + input
-            Value cd      = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(curDecayInt));
-            Value cProd   = arith::MulIOp::create(b, loc, cd, c);
-            Value cShifted = arith::ShRSIOp::create(b, loc, cProd, shiftVal);
-            Value cNew    = arith::AddIOp::create(b, loc, cShifted, s);
+            Value cNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, curDecayInt, c, dScale), s);
 
             // v_new = (vol_decay * v) >> d_scale + c_new
-            Value vd      = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(volDecayInt));
-            Value vProd   = arith::MulIOp::create(b, loc, vd, v);
-            Value vShifted = arith::ShRSIOp::create(b, loc, vProd, shiftVal);
-            Value vNew    = arith::AddIOp::create(b, loc, vShifted, cNew);
+            Value vNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, volDecayInt, v, dScale), cNew);
             // spike = v_new > threshold ? 1 : 0
             Value th    = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(thresholdInt));
             Value cmp   = arith::CmpIOp::create(b,
@@ -345,14 +359,9 @@ struct LowerLIF : public OpRewritePattern<snn::LIFOp> {
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value s = args[0], v = args[1];
 
-            Value shiftVal = arith::ConstantOp::create(b,
-                loc, i32, b.getI32IntegerAttr(dScale));
-
             // voltage = (decay * v) >> d_scale + input
-            Value dc      = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(decayInt));
-            Value vProd   = arith::MulIOp::create(b, loc, dc, v);
-            Value vShifted = arith::ShRSIOp::create(b, loc, vProd, shiftVal);
-            Value vNew    = arith::AddIOp::create(b, loc, vShifted, s);
+            Value vNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, decayInt, v, dScale), s);
             // spike = vNew > threshold_int
             Value th    = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(thresholdInt));
             Value cmp   = arith::CmpIOp::create(b,
@@ -409,7 +418,6 @@ struct LowerLI : public OpRewritePattern<snn::LIOp> {
       // Quantized path (Q12)
       int64_t dScale   = op.getDScale();
       int64_t decayInt = op.getDecayInt();
-      Type i32 = rewriter.getI32Type();
 
       linalg::GenericOp::create(rewriter,
           loc, TypeRange{}, ValueRange{input},
@@ -417,14 +425,9 @@ struct LowerLI : public OpRewritePattern<snn::LIOp> {
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value s = args[0], v = args[1];
 
-            Value shiftVal = arith::ConstantOp::create(b,
-                loc, i32, b.getI32IntegerAttr(dScale));
-
             // voltage = (decay * v) >> d_scale + input
-            Value dc       = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(decayInt));
-            Value vProd    = arith::MulIOp::create(b, loc, dc, v);
-            Value vShifted = arith::ShRSIOp::create(b, loc, vProd, shiftVal);
-            Value vNew     = arith::AddIOp::create(b, loc, vShifted, s);
+            Value vNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, decayInt, v, dScale), s);
             linalg::YieldOp::create(b, loc, ValueRange{vNew, vNew});
           });
     }
@@ -476,7 +479,6 @@ struct LowerCubaLI : public OpRewritePattern<snn::CubaLIOp> {
       int64_t dScale      = op.getDScale();
       int64_t curDecayInt = op.getCurDecayInt();
       int64_t volDecayInt = op.getVolDecayInt();
-      Type i32 = rewriter.getI32Type();
 
       linalg::GenericOp::create(rewriter,
           loc, TypeRange{}, ValueRange{input},
@@ -484,18 +486,11 @@ struct LowerCubaLI : public OpRewritePattern<snn::CubaLIOp> {
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value s = args[0], c = args[1], v = args[2];
 
-            Value shiftVal = arith::ConstantOp::create(b,
-                loc, i32, b.getI32IntegerAttr(dScale));
+            Value cNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, curDecayInt, c, dScale), s);
 
-            Value cd       = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(curDecayInt));
-            Value cProd    = arith::MulIOp::create(b, loc, cd, c);
-            Value cShifted = arith::ShRSIOp::create(b, loc, cProd, shiftVal);
-            Value cNew     = arith::AddIOp::create(b, loc, cShifted, s);
-
-            Value vd       = arith::ConstantOp::create(b, loc, i32, b.getI32IntegerAttr(volDecayInt));
-            Value vProd    = arith::MulIOp::create(b, loc, vd, v);
-            Value vShifted = arith::ShRSIOp::create(b, loc, vProd, shiftVal);
-            Value vNew     = arith::AddIOp::create(b, loc, vShifted, cNew);
+            Value vNew = arith::AddIOp::create(b, loc,
+                decayMul(b, loc, volDecayInt, v, dScale), cNew);
 
             linalg::YieldOp::create(b, loc, ValueRange{cNew, vNew, vNew});
           });

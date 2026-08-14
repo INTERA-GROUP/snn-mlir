@@ -22,12 +22,15 @@ func.func @li_float(
   return
 }
 
-// Quantized path: muli/shrsi/addi for Q12 decay; no cmpi.
+// Quantized path: the Q12 decay product is taken in i64 and truncated back, state stays i32;
+// no cmpi.
 // CHECK-LABEL: func.func @li_quantized
 // CHECK:         linalg.generic
-// CHECK:         arith.muli
-// CHECK:         arith.shrsi
-// CHECK:         arith.addi
+// CHECK:         arith.extsi %{{.*}} : i32 to i64
+// CHECK:         arith.muli %{{.*}} : i64
+// CHECK:         arith.shrsi %{{.*}} : i64
+// CHECK:         arith.trunci %{{.*}} : i64 to i32
+// CHECK:         arith.addi %{{.*}} : i32
 // CHECK-NOT:     arith.cmpi
 // CHECK-NOT:     snn.li
 func.func @li_quantized(

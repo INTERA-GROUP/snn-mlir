@@ -24,12 +24,20 @@ func.func @cubali_float(
   return
 }
 
-// Quantized path: muli/shrsi/addi for both decay steps; no cmpi or spike select.
+// Quantized path: each Q12 decay product is taken in i64 and truncated back, state stays i32;
+// no cmpi or spike select. Both decay stages are pinned — a partial revert must fail.
 // CHECK-LABEL: func.func @cubali_quantized
 // CHECK:         linalg.generic
-// CHECK:         arith.muli
-// CHECK:         arith.shrsi
-// CHECK:         arith.addi
+// CHECK:         arith.extsi %{{.*}} : i32 to i64
+// CHECK:         arith.muli %{{.*}} : i64
+// CHECK:         arith.shrsi %{{.*}} : i64
+// CHECK:         arith.trunci %{{.*}} : i64 to i32
+// CHECK:         arith.addi %{{.*}} : i32
+// CHECK:         arith.extsi %{{.*}} : i32 to i64
+// CHECK:         arith.muli %{{.*}} : i64
+// CHECK:         arith.shrsi %{{.*}} : i64
+// CHECK:         arith.trunci %{{.*}} : i64 to i32
+// CHECK:         arith.addi %{{.*}} : i32
 // CHECK-NOT:     arith.cmpi
 // CHECK-NOT:     snn.cubali
 func.func @cubali_quantized(

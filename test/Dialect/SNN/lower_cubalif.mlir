@@ -25,12 +25,20 @@ func.func @cubalif_float(
   return
 }
 
-// Quantized path: muli/shrsi/addi for Q12 dynamics; cmpi sgt for threshold; i8 spike output.
+// Quantized path: each Q12 decay product is taken in i64 and truncated back, while state,
+// threshold and spike stay i32/i8. Both decay stages are pinned — a partial revert must fail.
 // CHECK-LABEL: func.func @cubalif_quantized
 // CHECK:         linalg.generic
-// CHECK:         arith.muli
-// CHECK:         arith.shrsi
-// CHECK:         arith.addi
+// CHECK:         arith.extsi %{{.*}} : i32 to i64
+// CHECK:         arith.muli %{{.*}} : i64
+// CHECK:         arith.shrsi %{{.*}} : i64
+// CHECK:         arith.trunci %{{.*}} : i64 to i32
+// CHECK:         arith.addi %{{.*}} : i32
+// CHECK:         arith.extsi %{{.*}} : i32 to i64
+// CHECK:         arith.muli %{{.*}} : i64
+// CHECK:         arith.shrsi %{{.*}} : i64
+// CHECK:         arith.trunci %{{.*}} : i64 to i32
+// CHECK:         arith.addi %{{.*}} : i32
 // CHECK:         arith.cmpi sgt
 // CHECK:         arith.select
 // CHECK-NOT:     snn.cubalif
