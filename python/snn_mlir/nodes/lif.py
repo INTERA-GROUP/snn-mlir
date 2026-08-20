@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import nir
 import numpy as np
 
-from ._base import NodeInfo, nir_shape
+from ._base import NodeInfo, memref_type, nir_shape
 
 __all__ = ["LIFInfo", "parse_if", "parse_lif"]
 
@@ -182,16 +182,17 @@ def _emit_lif_float(
     alloca_output: bool,
 ) -> list[str]:
     n = info.size
+    memref_t = memref_type(info.shape, "f32")
     lines = ["", f"    // --- LIF {info.name}: ({n}) neurons ---"]
     if alloca_output:
-        lines.append(f"    {output_var} = memref.alloca() : memref<{n}xf32>")
+        lines.append(f"    {output_var} = memref.alloca() : {memref_t}")
     lines.append(
         f"    snn.lif ins({input_var}) state({voltage_var}) out({output_var})"
         f" {{decay_float = {info.decay:.10e} : f64,"
         f" threshold_float = {info.threshold:.10e} : f64,"
         f" v_reset_float = {info.v_reset:.10e} : f64}}"
-        f" : memref<{n}xf32>, memref<{n}xf32>"
-        f" -> memref<{n}xf32>",
+        f" : {memref_t}, {memref_t}"
+        f" -> {memref_t}",
     )
     return lines
 
@@ -204,16 +205,18 @@ def _emit_lif_int(
     alloca_output: bool,
 ) -> list[str]:
     n = info.size
+    state_t = memref_type(info.shape, "i32")
+    spike_t = memref_type(info.shape, "i8")
     lines = ["", f"    // --- LIF {info.name}: ({n}) neurons, Q{_D_SCALE} ---"]
     if alloca_output:
-        lines.append(f"    {output_var} = memref.alloca() : memref<{n}xi8>")
+        lines.append(f"    {output_var} = memref.alloca() : {spike_t}")
     lines.append(
         f"    snn.lif ins({input_var}) state({voltage_var}) out({output_var})"
         f" {{d_scale = {_D_SCALE} : i64,"
         f" decay_int = {info.decay_scaled} : i64,"
         f" threshold_int = {info.threshold_scaled} : i64,"
         f" v_reset_int = {info.v_reset_scaled} : i64}}"
-        f" : memref<{n}xi32>, memref<{n}xi32>"
-        f" -> memref<{n}xi8>",
+        f" : {state_t}, {state_t}"
+        f" -> {spike_t}",
     )
     return lines

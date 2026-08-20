@@ -12,7 +12,7 @@ import nir
 import numpy as np
 import pytest
 from snn_mlir._graph import insert_rescale_nodes, parse_graph, quantize_layers
-from snn_mlir.nodes._base import nir_shape
+from snn_mlir.nodes._base import memref_type, nir_shape
 from snn_mlir.nodes.cubalif import CubaLIFInfo
 from snn_mlir.nodes.lif import LIFInfo
 
@@ -27,6 +27,37 @@ def test_nir_shape_is_plain_ints():
     shape = nir_shape({"input": np.array([8])}, "input", node="n")
     assert shape == (8,)
     assert all(type(d) is int for d in shape)
+
+
+# ── memref_type: the one place the MLIR spelling is known ─────────────────────
+#
+# The rank-1 case is covered indirectly by every emitted-MLIR golden in this
+# suite. The N-D cases are not reachable from the front end until a
+# rank-changing layer exists, so they are pinned directly here rather than left
+# untested until the first conv model leans on them.
+
+
+def test_memref_type_rank1_is_the_flat_spelling():
+    assert memref_type((200,), "f32") == "memref<200xf32>"
+
+
+def test_memref_type_keeps_every_dimension():
+    assert memref_type((16, 16, 16), "i8") == "memref<16x16x16xi8>"
+    assert memref_type((2, 34, 34), "i32") == "memref<2x34x34xi32>"
+
+
+def test_memref_type_does_not_flatten():
+    # 2*3*4 == 24, and the whole point is that these are different types.
+    assert memref_type((2, 3, 4), "f32") != memref_type((24,), "f32")
+
+
+def test_memref_type_accepts_numpy_ints():
+    assert memref_type(tuple(np.array([16, 16, 16])), "i8") == "memref<16x16x16xi8>"
+
+
+def test_memref_type_rejects_rank0():
+    with pytest.raises(ValueError, match="at least one dimension"):
+        memref_type((), "f32")
 
 
 def test_nir_shape_refuses_a_missing_entry():

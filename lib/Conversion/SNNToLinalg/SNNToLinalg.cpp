@@ -29,6 +29,27 @@ static bool isFloatMemRef(Value v) {
 }
 
 //===----------------------------------------------------------------------===//
+//  Helpers: the iteration space of a shape-preserving elementwise op
+//
+//  The neuron ops and snn.rescale read and write one element per element, so
+//  their iteration space is just the operand shape: one identity map per
+//  operand, one parallel iterator per dimension. Deriving both from the operand
+//  rank is what lets a dense layer's vector and a conv layer's feature map share
+//  a single lowering. At rank 1 these reproduce the previous
+//  getDimIdentityMap() output exactly.
+//===----------------------------------------------------------------------===//
+static SmallVector<AffineMap> identityMaps(OpBuilder &b, Value operand,
+                                           unsigned numOperands) {
+  unsigned rank = cast<MemRefType>(operand.getType()).getRank();
+  return SmallVector<AffineMap>(numOperands, b.getMultiDimIdentityMap(rank));
+}
+
+static SmallVector<utils::IteratorType> parallelIterators(Value operand) {
+  unsigned rank = cast<MemRefType>(operand.getType()).getRank();
+  return SmallVector<utils::IteratorType>(rank, utils::IteratorType::parallel);
+}
+
+//===----------------------------------------------------------------------===//
 //  Helper: the Q12 decay step  (decay * state) >> d_scale
 //
 //  Both factors are Q12, so the product is Q24 and overflows i32 while the
@@ -166,10 +187,8 @@ struct LowerRescale : public OpRewritePattern<snn::RescaleOp> {
     auto outTy = cast<MemRefType>(output.getType());
     Type outElem = outTy.getElementType(); // i32
 
-    AffineMap id = rewriter.getDimIdentityMap();
-    SmallVector<AffineMap> maps = {id, id};
-    SmallVector<utils::IteratorType> iterTypes = {
-        utils::IteratorType::parallel};
+    SmallVector<AffineMap> maps = identityMaps(rewriter, input, 2);
+    SmallVector<utils::IteratorType> iterTypes = parallelIterators(input);
 
     linalg::GenericOp::create(rewriter,
         loc, TypeRange{}, ValueRange{input}, ValueRange{output}, maps,
@@ -214,10 +233,8 @@ struct LowerCubaLIF : public OpRewritePattern<snn::CubaLIFOp> {
     Value voltage = op.getVoltage();
     Value output = op.getOutput();
 
-    AffineMap id = rewriter.getDimIdentityMap();
-    SmallVector<AffineMap> maps = {id, id, id, id};
-    SmallVector<utils::IteratorType> iterTypes = {
-        utils::IteratorType::parallel};
+    SmallVector<AffineMap> maps = identityMaps(rewriter, input, 4);
+    SmallVector<utils::IteratorType> iterTypes = parallelIterators(input);
 
     if (isFloatMemRef(input)) {
       // Float path
@@ -312,9 +329,8 @@ struct LowerLIF : public OpRewritePattern<snn::LIFOp> {
     Value voltage = op.getVoltage();
     Value output = op.getOutput();
 
-    AffineMap id = rewriter.getDimIdentityMap();
-    SmallVector<AffineMap> maps = {id, id, id};
-    SmallVector<utils::IteratorType> iterTypes = {utils::IteratorType::parallel};
+    SmallVector<AffineMap> maps = identityMaps(rewriter, input, 3);
+    SmallVector<utils::IteratorType> iterTypes = parallelIterators(input);
 
     if (isFloatMemRef(input)) {
       double decay     = op.getDecayFloat().convertToDouble();
@@ -395,9 +411,8 @@ struct LowerLI : public OpRewritePattern<snn::LIOp> {
     Value voltage = op.getVoltage();
     Value output = op.getOutput();
 
-    AffineMap id = rewriter.getDimIdentityMap();
-    SmallVector<AffineMap> maps = {id, id, id};
-    SmallVector<utils::IteratorType> iterTypes = {utils::IteratorType::parallel};
+    SmallVector<AffineMap> maps = identityMaps(rewriter, input, 3);
+    SmallVector<utils::IteratorType> iterTypes = parallelIterators(input);
 
     if (isFloatMemRef(input)) {
       double decay = op.getDecayFloat().convertToDouble();
@@ -452,9 +467,8 @@ struct LowerCubaLI : public OpRewritePattern<snn::CubaLIOp> {
     Value voltage = op.getVoltage();
     Value output = op.getOutput();
 
-    AffineMap id = rewriter.getDimIdentityMap();
-    SmallVector<AffineMap> maps = {id, id, id, id};
-    SmallVector<utils::IteratorType> iterTypes = {utils::IteratorType::parallel};
+    SmallVector<AffineMap> maps = identityMaps(rewriter, input, 4);
+    SmallVector<utils::IteratorType> iterTypes = parallelIterators(input);
 
     if (isFloatMemRef(input)) {
       double curDecay = op.getCurDecayFloat().convertToDouble();

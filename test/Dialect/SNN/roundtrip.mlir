@@ -192,3 +192,34 @@ func.func @li_quantized(
       : memref<64xi32>, memref<64xi32> -> memref<64xi32>
   return
 }
+
+// ── N-D operands ────────────────────────────────────────────────────────────
+//
+// The assembly formats carry operand types verbatim, so a feature-map-shaped
+// neuron has to survive parse and print unchanged — the textual round trip is a
+// separate thing from the verifier rule that admits it. lower_rank_polymorphic
+// covers what the lowering then does with it.
+
+// CHECK-LABEL: func.func @lif_rank3_quantized
+// CHECK: snn.lif
+func.func @lif_rank3_quantized(
+    %input:   memref<16x16x16xi32>,
+    %voltage: memref<16x16x16xi32>,
+    %output:  memref<16x16x16xi8>
+) {
+  snn.lif ins(%input) state(%voltage) out(%output)
+      {d_scale = 12 : i64, decay_int = 4096 : i64, threshold_int = 4096 : i64}
+      : memref<16x16x16xi32>, memref<16x16x16xi32> -> memref<16x16x16xi8>
+  return
+}
+
+// CHECK-LABEL: func.func @rescale_rank3
+// CHECK: snn.rescale
+func.func @rescale_rank3(
+    %input:  memref<16x16x16xi32>,
+    %output: memref<16x16x16xi32>
+) {
+  snn.rescale ins(%input) out(%output) {w_scale = 7 : i64, d_scale = 12 : i64}
+      : memref<16x16x16xi32> -> memref<16x16x16xi32>
+  return
+}

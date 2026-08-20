@@ -46,6 +46,30 @@ bool sameLength(MemRefType t, int64_t n) {
   return t.getDimSize(0) == n;
 }
 
+// True when `a` and `b` have the same rank and, dimension by dimension, the
+// same static extent. Dynamic dims are accepted per dimension, for the same
+// reason as above.
+//
+// This is what makes the neuron ops and snn.rescale rank-polymorphic. They are
+// shape-preserving and elementwise, so "same shape" is their entire structural
+// contract and nothing in it mentions a rank: a dense layer's vector and a conv
+// layer's feature map are the same statement at different ranks. Equality is
+// deliberately per-dimension rather than per-element-count, so a rank-1 state
+// paired with a rank-3 input is rejected rather than silently accepted — going
+// between the two is memref.collapse_shape's job, spelled out in the IR.
+bool sameShape(MemRefType a, MemRefType b) {
+  if (a.getRank() != b.getRank())
+    return false;
+  for (int64_t i = 0, e = a.getRank(); i < e; ++i) {
+    int64_t da = a.getDimSize(i), db = b.getDimSize(i);
+    if (ShapedType::isDynamic(da) || ShapedType::isDynamic(db))
+      continue;
+    if (da != db)
+      return false;
+  }
+  return true;
+}
+
 // Shared check for the neuron ops (cubalif / lif / cubali / li). `states` are
 // the in-place state memrefs (1 or 2). `spikeOutput` selects the quantized
 // output contract: i8 for spiking neurons, i32 for voltage-readout neurons.
@@ -55,13 +79,16 @@ LogicalResult verifyNeuron(Operation *op, Value input, ArrayRef<Value> states,
   auto outTy = memrefOf(output);
   Type inElem = inTy.getElementType();
 
-  // All operands must be 1-D vectors of equal length.
-  int64_t n = inTy.getRank() == 1 ? inTy.getDimSize(0) : ShapedType::kDynamic;
-  if (inTy.getRank() != 1 || !sameLength(outTy, n))
-    return op->emitOpError("expects all operands to be 1-D of equal length");
+  // A point neuron is elementwise and shape-preserving, at any rank: one neuron
+  // per input element, wherever that element sits. So every operand must carry
+  // the input's shape, and no operand is constrained to a particular rank.
+  if (!sameShape(inTy, outTy))
+    return op->emitOpError("expects the output to have the same shape as the "
+                           "input");
   for (Value s : states)
-    if (!sameLength(memrefOf(s), n))
-      return op->emitOpError("state operand length must match the input length");
+    if (!sameShape(inTy, memrefOf(s)))
+      return op->emitOpError("state operand must have the same shape as the "
+                             "input");
 
   if (isa<FloatType>(inElem)) {
     for (Value s : states)
@@ -146,9 +173,10 @@ LogicalResult snn::RescaleOp::verify() {
   if (!outTy.getElementType().isInteger(32))
     return emitOpError("output must be i32");
 
-  int64_t n = inTy.getRank() == 1 ? inTy.getDimSize(0) : ShapedType::kDynamic;
-  if (inTy.getRank() != 1 || !sameLength(outTy, n))
-    return emitOpError("input and output must be 1-D of equal length");
+  // Elementwise and shape-preserving at any rank, like the neuron ops: rescale
+  // shifts each element in place and cares about scales, not geometry.
+  if (!sameShape(inTy, outTy))
+    return emitOpError("input and output must have the same shape");
   return success();
 }
 

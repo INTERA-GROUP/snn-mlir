@@ -31,6 +31,26 @@ def nir_shape(types: dict | None, key: str, *, node: str) -> tuple[int, ...]:
     return tuple(int(d) for d in np.atleast_1d(entry))
 
 
+def memref_type(shape: tuple[int, ...], elem: str) -> str:
+    """The MLIR memref type for a tensor of `shape` holding `elem` scalars.
+
+    ``(200,), "f32"`` → ``memref<200xf32>``; ``(16, 16, 16), "i8"`` →
+    ``memref<16x16x16xi8>``. Emitters build type strings by hand in a dozen
+    places, and every one of them used to interpolate a single flat count, which
+    is only correct while every layer is rank 1. Routing them through one helper
+    means a rank-changing layer needs no new formatting code — and, more to the
+    point, that there is exactly one place where the ``x``-separated MLIR spelling
+    is known.
+    """
+    if not shape:
+        raise ValueError(
+            "memref_type needs at least one dimension; a rank-0 memref carries "
+            "no layer shape.",
+        )
+    dims = "x".join(str(int(d)) for d in shape)
+    return f"memref<{dims}x{elem}>"
+
+
 class NodeInfo(ABC):
     """Base class for parsed NIR nodes.
 
@@ -159,6 +179,17 @@ class NodeInfo(ABC):
     # ── MLIR function argument contributions ──────────────────────────────────
 
     def state_func_args(self, quantize: bool) -> list[tuple[str, str]]:
+        """``(name, memref type)`` for each state buffer this layer needs.
+
+        These are function arguments, so their types are half of the positional
+        C ABI: the generated descriptors in ``_codegen`` must agree with them
+        exactly. Implementations still spell them from the flat ``size``, which
+        pins them to rank 1 — deliberately, because widening them is not a
+        dialect change but an ABI change, and it has to move together with the
+        C side and with ``%input``/``%output`` in ``_emit``. The op bodies have
+        already moved to ``memref_type(shape, …)``; at rank 1 the two spellings
+        are the same string, so nothing disagrees today.
+        """
         return []
 
     # ── MLIR body emission ────────────────────────────────────────────────────

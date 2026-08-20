@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Test: op verifiers reject malformed IR with a clear diagnostic.
 // Float mode must be type-uniform; quantized mode is locked to the i8/i32
-// contract that the quantizer and downstream backends depend on.
+// contract that the quantizer and downstream backends depend on. The neuron ops
+// and snn.rescale accept any rank, but every operand must carry the same shape.
 // RUN: %snn-opt --split-input-file --verify-diagnostics %s
 
 // Quantized linear must use i8 weights, not i16.
@@ -91,5 +92,53 @@ func.func @cubalif_bad_state(
       {d_scale = 12 : i64, cur_decay_int = 3686 : i64,
        vol_decay_int = 4055 : i64, threshold_int = 4096 : i64}
       : memref<64xi32>, memref<64xi16>, memref<64xi32> -> memref<64xi8>
+  return
+}
+
+// -----
+
+// Neuron operands must agree DIMENSION BY DIMENSION, not merely in element
+// count. 2*3*4 == 24, so an element-count rule would accept this silently and
+// hand the lowering an iteration space its state operand cannot be indexed
+// with. Collapsing a feature map to a vector is memref.collapse_shape's job.
+func.func @lif_state_rank_mismatch(
+    %input:   memref<2x3x4xf32>,
+    %voltage: memref<24xf32>,
+    %output:  memref<2x3x4xf32>
+) {
+  // expected-error @+1 {{state operand must have the same shape as the input}}
+  snn.lif ins(%input) state(%voltage) out(%output)
+      {decay_float = 9.500000e-01 : f64,
+       threshold_float = 1.000000e+00 : f64}
+      : memref<2x3x4xf32>, memref<24xf32> -> memref<2x3x4xf32>
+  return
+}
+
+// -----
+
+// Same rank, one differing extent: still a shape disagreement.
+func.func @lif_output_shape_mismatch(
+    %input:   memref<2x3x4xf32>,
+    %voltage: memref<2x3x4xf32>,
+    %output:  memref<2x3x5xf32>
+) {
+  // expected-error @+1 {{expects the output to have the same shape as the input}}
+  snn.lif ins(%input) state(%voltage) out(%output)
+      {decay_float = 9.500000e-01 : f64,
+       threshold_float = 1.000000e+00 : f64}
+      : memref<2x3x4xf32>, memref<2x3x4xf32> -> memref<2x3x5xf32>
+  return
+}
+
+// -----
+
+// snn.rescale is shape-preserving too — it shifts each element in place.
+func.func @rescale_shape_mismatch(
+    %input:  memref<16x16x16xi32>,
+    %output: memref<16x16xi32>
+) {
+  // expected-error @+1 {{input and output must have the same shape}}
+  snn.rescale ins(%input) out(%output) {w_scale = 7 : i64, d_scale = 12 : i64}
+      : memref<16x16x16xi32> -> memref<16x16xi32>
   return
 }

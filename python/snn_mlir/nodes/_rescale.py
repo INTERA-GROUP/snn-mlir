@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from ._base import NodeInfo
+from ._base import NodeInfo, memref_type
 
 
 @dataclass
@@ -55,11 +55,12 @@ class RescaleInfo(NodeInfo):
     ) -> tuple[list[str], str]:
         out_var = f"%rescaled_{self.name}"
         shift = self._d_scale - self._w_scale
+        memref_t = memref_type(self.shape, "i32")
         return [
             "",
             f"    // --- Rescale {self.name}: (2^{self._w_scale}) -> i32 (2^{self._d_scale}), shift {shift} ---",  # noqa: E501
-            f"    {out_var} = memref.alloca() : memref<{self.size}xi32>",
+            f"    {out_var} = memref.alloca() : {memref_t}",
             f"    snn.rescale ins({input_var}) out({out_var})"
             f" {{w_scale = {self._w_scale} : i64, d_scale = {self._d_scale} : i64}}"
-            f" : memref<{self.size}xi32> -> memref<{self.size}xi32>",
+            f" : {memref_t} -> {memref_t}",
         ], out_var
