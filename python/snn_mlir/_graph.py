@@ -13,6 +13,7 @@ branching, is rejected loudly.
 ``analyze_topology`` to report the same problems without raising.
 """
 
+import warnings
 from dataclasses import dataclass, field
 
 import nir
@@ -367,6 +368,90 @@ def as_graph_info(layers: "list[NodeInfo] | GraphInfo") -> GraphInfo:
 # ── parsing ───────────────────────────────────────────────────────────────────
 
 
+def _declared_shape(node: object, key: str) -> tuple[int, ...] | None:
+    """A NIR node's own declared ``input``/``output`` shape, or None if absent."""
+    entry = (getattr(node, f"{key}_type", None) or {}).get(key)
+    return None if entry is None else tuple(int(d) for d in entry)
+
+
+def _propagate_shapes(
+    graph: nir.NIRGraph,
+    nodes: dict[str, NodeInfo],
+    topo: Topology,
+) -> None:
+    """Flow shapes along the chain, warning wherever NIR disagrees with us.
+
+    Every parser reads its layer's shape from that node's own NIR
+    ``input_type``, which makes each layer self-consistent but says nothing
+    about whether consecutive layers actually fit together. This walk answers
+    that: it starts at the ``input`` terminal, hands each layer the shape its
+    predecessor really produces, and lets the layer decide what it emits.
+
+    **The propagated shape wins.** NIR's declared types are a cross-check, not
+    the authority, because NIR's own inference is demonstrably not reliable —
+    ``Conv2d.__post_init__`` uses the kernel *height* for both spatial
+    dimensions, so a non-square kernel gets an output shape that is simply
+    wrong. Trusting the file there would bake that bug into the emitted memref
+    types. Disagreements are reported rather than raised: the shape we compute
+    is the one the arithmetic requires, and a stale ``output_type`` in a file is
+    the model's problem, not a reason to refuse it.
+    """
+    input_shape = _declared_shape(graph.nodes.get("input"), "output")
+    neuron_of_recurrent = {syn: neuron for neuron, syn in topo.recurrent_edges}
+    produced: dict[str, tuple[int, ...] | None] = {}
+
+    for name in topo.order:
+        layer = nodes[name]
+
+        # Where this layer's input comes from. A recurrent synapse has no
+        # forward predecessor — its input is the state buffer, which holds the
+        # spikes of the neuron the broken edge came from.
+        if name in neuron_of_recurrent:
+            incoming = [nodes[neuron_of_recurrent[name]].out_shape]
+        else:
+            incoming = [
+                input_shape if src == "input" else produced.get(src)
+                for src, dst in topo.edges
+                if dst == name and (src == "input" or src in produced)
+            ]
+        incoming = [shape for shape in incoming if shape is not None]
+
+        if incoming:
+            arriving = incoming[0]
+            for other in incoming[1:]:
+                if other != arriving:
+                    warnings.warn(
+                        f"Node '{name}': fan-in branches arrive with different shapes "
+                        f"({arriving} and {other}); the elementwise merge in front of "
+                        f"a neuron requires one shape.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+            declared_in = layer.in_shape
+            if declared_in is not None and tuple(declared_in) != arriving:
+                warnings.warn(
+                    f"Node '{name}': its predecessor produces {arriving}, but the node "
+                    f"declares an input shape of {tuple(declared_in)}. Using {arriving} "
+                    f"— if the node cannot absorb it, the emitted MLIR will not verify.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            layer.adopt_in_shape(arriving)
+
+        produced[name] = layer.out_shape
+
+        declared_out = _declared_shape(graph.nodes.get(name), "output")
+        if declared_out is not None and produced[name] is not None:
+            if tuple(produced[name]) != declared_out:
+                warnings.warn(
+                    f"Node '{name}': NIR declares output_type {declared_out}, but the "
+                    f"layer produces {tuple(produced[name])}. Using the computed shape "
+                    f"— NIR's own shape inference is not authoritative here.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+
+
 def parse_graph(graph: nir.NIRGraph) -> GraphInfo:
     """Parse a NIR graph into layers ordered for one forward timestep.
 
@@ -408,6 +493,8 @@ def parse_graph(graph: nir.NIRGraph) -> GraphInfo:
     for issue in topo.issues:
         if issue.severity == "error":
             raise ValueError(issue.message)
+
+    _propagate_shapes(graph, nodes, topo)
 
     ordered_nodes = {name: nodes[name] for name in topo.order}
     return GraphInfo(
@@ -455,7 +542,7 @@ def insert_rescale_nodes(layers: "list[NodeInfo] | GraphInfo") -> GraphInfo:
             continue
         rescale = RescaleInfo(
             name=syn.name,
-            size=syn.weight_shape[0],
+            shape=syn.out_shape,
             _w_scale=syn.w_scale,
             _d_scale=neuron.d_scale,
         )

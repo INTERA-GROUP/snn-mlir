@@ -29,7 +29,7 @@ def test_quantized_mlir_uses_q12(cubali_quantized):
 
 
 def test_q12_decay_range():
-    info = CubaLIInfo(name="2", size=8, cur_decay=0.9, vol_decay=0.95)
+    info = CubaLIInfo(name="2", shape=(8,), cur_decay=0.9, vol_decay=0.95)
     info.quantize()
     # 0.9 * 4096 ≈ 3686
     assert 3600 < info.cur_decay_scaled < 3800

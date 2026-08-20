@@ -29,10 +29,28 @@ vol_decay = 1 − dt / tau_mem      # voltage (membrane) leak per step
 threshold = v_threshold
 ```
 
-Integrate-and-fire variants (`CubaIF`, `IF`) are simply the leaky case with the decay set to
-`1.0`, which disables the exponential leak. The parser also enforces the dialect's
-assumptions — e.g. `v_leak` must be 0, and `tau_syn`, `tau_mem`, `v_threshold` must be uniform
-across the layer (see [Limitations](../limitations.md)).
+The parser also enforces the dialect's assumptions — e.g. `v_leak` must be 0, and `tau_syn`,
+`tau_mem`, `v_threshold` must be uniform across the layer (see
+[Limitations](../limitations.md)).
+
+### The non-leaky nodes are not the leaky ones with `decay = 1`
+
+`nir.IF` and `nir.I` do describe the same dynamics as `LIF`/`LI` with the leak disabled, but that
+is a statement about the *neuron*, not a recipe for the *parser*. They carry **no `tau` and no
+`v_leak` field at all**, so:
+
+* there is nothing to discretize — `decay = 1` is the definition of the node, not a computed
+  result — and the leaky parser would simply fail on the missing `tau`; and
+* **`r` changes meaning.** In `tau·dv/dt = (v_leak − v) + r·i` the exporter convention `r = tau/dt`
+  makes `r` cancel out of the input gain entirely (it survives only in `decay = 1 − 1/r`), which is
+  why `LIF`/`LI` accept **any** `r`. `IF`/`I` have the equation `dv/dt = r·i`: no `tau`, so nothing
+  carries `dt` and nothing cancels. `r` is left as a bare gain on the input, and the update these
+  emit is `voltage += input`. A node with `r ≠ 1` is therefore **rejected**, in the same spirit as
+  the `CubaLIF` gain check below.
+
+`snn_mlir` handles this with two extra *parser functions* (`parse_if`, `parse_i`) feeding the
+existing `snn.lif` / `snn.li` ops — the same shape as `parse_linear`/`parse_affine`, which both
+build `snn.linear`. The dialect stays at four neuron ops.
 
 ### The discretization convention
 
@@ -68,14 +86,16 @@ Each SNN op covers a family of NIR nodes:
 | `nir.Linear` | `snn.linear` | No bias |
 | `nir.Affine` | `snn.linear` | Bias added as second operand |
 | `nir.CubaLIF` | `snn.cubalif` | `cur_decay`, `vol_decay` < 1 |
-| `nir.CubaIF` | `snn.cubalif` | `cur_decay = vol_decay = 1.0` (no leak) |
 | `nir.CubaLI` | `snn.cubali` | `cur_decay`, `vol_decay` < 1 |
-| `nir.CubaI` | `snn.cubali` | `cur_decay = vol_decay = 1.0` (no leak) |
-| `nir.LIF` | `snn.lif` | `decay` < 1 |
-| `nir.IF` | `snn.lif` | `decay = 1.0` (no leak) |
-| `nir.LI` | `snn.li` | `decay` < 1 |
-| `nir.I` | `snn.li` | `decay = 1.0` (no leak) |
+| `nir.LIF` | `snn.lif` | `decay` < 1, derived from `tau`/`r` |
+| `nir.IF` | `snn.lif` | `decay = 1.0` by definition; requires `r = 1` |
+| `nir.LI` | `snn.li` | `decay` < 1, derived from `tau`/`r` |
+| `nir.I` | `snn.li` | `decay = 1.0` by definition; requires `r = 1` |
 | _(internal)_ | `snn.rescale` | Inserted between `snn.linear` and neuron ops during quantized export; no NIR equivalent |
+
+NIR has no cumulative-current integrate-and-fire node — there is no `nir.CubaIF` or `nir.CubaI`
+— so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts. Six NIR node
+types map today; the table above is the complete list.
 
 ## Recurrence
 

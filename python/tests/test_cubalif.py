@@ -23,7 +23,7 @@ def test_quantized_mlir_uses_q12(cubalif_quantized):
 
 
 def test_q12_decay_range():
-    info = CubaLIFInfo(name="1", size=8, cur_decay=0.9, vol_decay=0.95, threshold=1.0)
+    info = CubaLIFInfo(name="1", shape=(8,), cur_decay=0.9, vol_decay=0.95, threshold=1.0)
     info.quantize()
     # Q12: value * 4096; 0.9 * 4096 ≈ 3686
     assert 3600 < info.cur_decay_scaled < 3800

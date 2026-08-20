@@ -1,5 +1,6 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import math
 from dataclasses import dataclass
 
 from ._base import NodeInfo
@@ -15,9 +16,28 @@ class RescaleInfo(NodeInfo):
     """
 
     name: str
-    size: int
+    shape: tuple[int, ...]
     _w_scale: int
     _d_scale: int
+
+    # ── shape traits ──────────────────────────────────────────────────────────
+
+    @property
+    def size(self) -> int:
+        """Flat element count — what the emitters and the C ABI measure in."""
+        return math.prod(self.shape)
+
+    @property
+    def in_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    @property
+    def out_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    def adopt_in_shape(self, shape: tuple[int, ...]) -> None:
+        """A rescale is a per-element shift: it wears whatever it is fed."""
+        self.shape = shape
 
     @property
     def w_scale(self) -> int:

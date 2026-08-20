@@ -1,13 +1,14 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import math
 from dataclasses import dataclass, field
 
 import nir
 import numpy as np
 
-from ._base import NodeInfo
+from ._base import NodeInfo, nir_shape
 
-__all__ = ["LIFInfo", "parse_lif"]
+__all__ = ["LIFInfo", "parse_if", "parse_lif"]
 
 _D_SCALE = 12
 
@@ -15,7 +16,7 @@ _D_SCALE = 12
 @dataclass
 class LIFInfo(NodeInfo):
     name: str
-    size: int
+    shape: tuple[int, ...]
     decay: float
     threshold: float
     v_reset: float = 0.0
@@ -28,6 +29,25 @@ class LIFInfo(NodeInfo):
     @property
     def is_neuron(self) -> bool:
         return True
+
+    # ── shape traits ──────────────────────────────────────────────────────────
+
+    @property
+    def size(self) -> int:
+        """Flat element count — what the emitters and the C ABI measure in."""
+        return math.prod(self.shape)
+
+    @property
+    def in_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    @property
+    def out_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    def adopt_in_shape(self, shape: tuple[int, ...]) -> None:
+        """A point neuron is shape-preserving: it wears whatever it is fed."""
+        self.shape = shape
 
     # ── neuron traits ─────────────────────────────────────────────────────────
 
@@ -96,14 +116,58 @@ def parse_lif(node: nir.LIF, name: str) -> LIFInfo:
 
     dt = float(node.tau[0] / node.r[0])
     decay = float(1 - (dt / node.tau[0]))
-    size = int(node.input_type["input"][0])
+    shape = nir_shape(node.input_type, "input", node=name)
 
     return LIFInfo(
         name=name,
-        size=size,
+        shape=shape,
         decay=decay,
         threshold=float(node.v_threshold[0]),
         v_reset=float(node.v_reset[0]),
+    )
+
+
+def parse_if(node: nir.IF, name: str) -> LIFInfo:
+    """``nir.IF`` — the non-leaky integrate-and-fire neuron — as an ``snn.lif``.
+
+    IF is NOT ``parse_lif`` with the decay forced to 1. ``nir.IF`` carries no
+    ``tau`` and no ``v_leak`` at all, so there is nothing to derive a decay
+    from: ``decay = 1`` is the *definition* of the node, not a computed result.
+    Sharing a parser would simply raise ``AttributeError`` on ``node.tau``.
+
+    The one field that needs a guard is ``r``, and it needs the opposite
+    treatment from the one it gets on LIF. In ``tau*dv/dt = (v_leak - v) + r*i``
+    the exporter convention is ``r = tau/dt``, which makes ``decay = 1 - 1/r``
+    and leaves the input gain identically 1 for any ``r`` — the ``r`` in the
+    equation and the ``r`` carrying ``dt`` cancel, which is why ``parse_lif``
+    must NOT reject ``r != 1``: there ``r`` encodes the leak. IF's equation is
+    ``dv/dt = r*i``: no ``tau``, so nothing carries ``dt`` and nothing cancels.
+    ``r`` is left as a bare input gain, and the update this emits is
+    ``voltage += input``, which assumes it is 1. Same class of guard as the
+    ``k != 1`` check in ``parse_cubalif``.
+    """
+    if np.unique(node.r).size != 1:
+        raise ValueError("r must be uniform across all IF neurons")
+    if np.unique(node.v_threshold).size != 1:
+        raise ValueError("v_threshold must be uniform across all IF neurons")
+    if np.unique(node.v_reset).size != 1:
+        raise ValueError("v_reset must be uniform across all IF neurons")
+    if not np.allclose(node.r, 1.0):
+        raise ValueError(
+            f"IF '{name}': input gain r = {float(np.max(node.r)):.6g} != 1. Unlike LIF, "
+            "an IF node has no tau for r to carry the timestep in, so r is a bare gain "
+            "on the input and the emitted update (voltage += input) would compute "
+            "different dynamics than were trained."
+        )
+    if not np.allclose(node.v_reset, 0.0):
+        raise ValueError("IF v_reset != 0 not supported yet")
+
+    return LIFInfo(
+        name=name,
+        shape=nir_shape(node.input_type, "input", node=name),
+        decay=1.0,
+        threshold=float(node.v_threshold.flat[0]),
+        v_reset=float(node.v_reset.flat[0]),
     )
 
 

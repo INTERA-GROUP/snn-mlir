@@ -7,6 +7,30 @@ import numpy as np
 from .._cname import c_identifier
 
 
+def nir_shape(types: dict | None, key: str, *, node: str) -> tuple[int, ...]:
+    """One NIR ``input_type``/``output_type`` entry as a plain tuple of ints.
+
+    NIR stores these as ``{"input": np.array([...])}``. Reading element ``[0]``
+    of that array — which every neuron parser used to do — silently truncates
+    anything past rank 1: a ``(16, 16, 16)`` feature map reads back as 16
+    neurons instead of 4096. Taking the whole entry is the only correct answer,
+    and ``NodeInfo.size`` derives the flat count from it.
+
+    Raises when the entry is missing: NIR nodes constructed in Python (rather
+    than read from a file) can carry no shape at all — ``SumPool2d`` and
+    ``AvgPool2d`` null theirs unconditionally in ``__post_init__`` — and a
+    silently-zero shape would be far worse than a refusal.
+    """
+    entry = (types or {}).get(key)
+    if entry is None:
+        raise ValueError(
+            f"Node '{node}': NIR declares no {key} shape, so the layer's size is "
+            f"unknown. Re-export the model with shapes, or call "
+            f"nir.NIRGraph.infer_types() on the graph before converting it."
+        )
+    return tuple(int(d) for d in np.atleast_1d(entry))
+
+
 class NodeInfo(ABC):
     """Base class for parsed NIR nodes.
 
@@ -37,6 +61,36 @@ class NodeInfo(ABC):
     def is_neuron(self) -> bool:
         """True for state-carrying neuron layers: CubaLIF, LIF, CubaLI, LI."""
         return False
+
+    # ── shape traits ──────────────────────────────────────────────────────────
+    #
+    # Every layer knows the shape of the tensor it reads and the one it writes.
+    # For the fully-connected set both are rank-1, but the graph walk propagates
+    # them generically so a rank-changing node (Conv2d, pooling, Flatten) drops
+    # in without the walk learning what it does. ``None`` means "this layer does
+    # not constrain the shape" and propagation passes through it unchanged.
+
+    @property
+    def in_shape(self) -> tuple[int, ...] | None:
+        """Shape of the tensor this layer reads, or None if unconstrained."""
+        return None
+
+    @property
+    def out_shape(self) -> tuple[int, ...] | None:
+        """Shape of the tensor this layer writes, or None if unconstrained."""
+        return None
+
+    def adopt_in_shape(self, shape: tuple[int, ...]) -> None:  # noqa: B027
+        """Take the shape propagated from this layer's predecessor.
+
+        Shape-preserving layers (neurons, rescale) override this to record the
+        shape they were handed; layers whose output shape is fixed by their own
+        parameters (a synapse's weight matrix) leave it a no-op. Called by
+        ``_graph.parse_graph`` in execution order, so a layer is always handed
+        the shape its predecessor actually produces rather than the one NIR
+        declared for it (NIR's own inference is not always right — see
+        docs/python/nir-mapping.md).
+        """
 
     # ── weight traits (synapse layers) ────────────────────────────────────────
 

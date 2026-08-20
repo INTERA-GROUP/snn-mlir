@@ -51,7 +51,7 @@ def linear_quantized():
 def cubalif_float():
     return CubaLIFInfo(
         name="1",
-        size=16,
+        shape=(16,),
         cur_decay=0.9,
         vol_decay=0.95,
         threshold=1.0,
@@ -62,7 +62,7 @@ def cubalif_float():
 def cubalif_quantized():
     info = CubaLIFInfo(
         name="1",
-        size=16,
+        shape=(16,),
         cur_decay=0.9,
         vol_decay=0.95,
         threshold=1.0,
@@ -73,36 +73,36 @@ def cubalif_quantized():
 
 @pytest.fixture
 def cubali_float():
-    return CubaLIInfo(name="2", size=16, cur_decay=0.9, vol_decay=0.95)
+    return CubaLIInfo(name="2", shape=(16,), cur_decay=0.9, vol_decay=0.95)
 
 
 @pytest.fixture
 def cubali_quantized():
-    info = CubaLIInfo(name="2", size=16, cur_decay=0.9, vol_decay=0.95)
+    info = CubaLIInfo(name="2", shape=(16,), cur_decay=0.9, vol_decay=0.95)
     info.quantize()
     return info
 
 
 @pytest.fixture
 def lif_float():
-    return LIFInfo(name="2", size=16, decay=0.9, threshold=1.0, v_reset=0.0)
+    return LIFInfo(name="2", shape=(16,), decay=0.9, threshold=1.0, v_reset=0.0)
 
 
 @pytest.fixture
 def lif_quantized():
-    info = LIFInfo(name="2", size=16, decay=0.9, threshold=1.0, v_reset=0.0)
+    info = LIFInfo(name="2", shape=(16,), decay=0.9, threshold=1.0, v_reset=0.0)
     info.quantize()
     return info
 
 
 @pytest.fixture
 def li_float():
-    return LIInfo(name="2", size=16, decay=0.9)
+    return LIInfo(name="2", shape=(16,), decay=0.9)
 
 
 @pytest.fixture
 def li_quantized():
-    info = LIInfo(name="2", size=16, decay=0.9)
+    info = LIInfo(name="2", shape=(16,), decay=0.9)
     info.quantize()
     return info
 

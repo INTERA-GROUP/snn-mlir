@@ -5,8 +5,8 @@ from ._registry import NODE_PARSERS
 from ._rescale import RescaleInfo
 from .cubali import CubaLIInfo, parse_cubali
 from .cubalif import CubaLIFInfo, parse_cubalif
-from .li import LIInfo, parse_li
-from .lif import LIFInfo, parse_lif
+from .li import LIInfo, parse_i, parse_li
+from .lif import LIFInfo, parse_if, parse_lif
 from .linear import LinearInfo, parse_affine, parse_linear
 
 __all__ = [
@@ -21,6 +21,8 @@ __all__ = [
     "parse_affine",
     "parse_cubali",
     "parse_cubalif",
+    "parse_i",
+    "parse_if",
     "parse_li",
     "parse_lif",
     "parse_linear",

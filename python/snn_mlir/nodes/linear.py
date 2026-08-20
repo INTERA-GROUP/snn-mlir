@@ -36,6 +36,22 @@ class LinearInfo(NodeInfo):
     def is_synapse(self) -> bool:
         return True
 
+    # ── shape traits ──────────────────────────────────────────────────────────
+    #
+    # A synapse is where the shape is DECIDED, not carried: the weight matrix
+    # fixes both ends, so `adopt_in_shape` stays the base class's no-op and a
+    # mismatch against the propagated shape is reported by the graph walk.
+    # `snn.linear` is strictly rank-1 (see docs/python/nir-mapping.md); the
+    # rank-changing nodes are Conv2d, the pooling family, and Flatten.
+
+    @property
+    def in_shape(self) -> tuple[int, ...]:
+        return (self.input_size,)
+
+    @property
+    def out_shape(self) -> tuple[int, ...]:
+        return (self.output_size,)
+
     # ── weight traits ─────────────────────────────────────────────────────────
 
     @property

@@ -23,26 +23,26 @@ def _make_linear(name="0", size_in=8, size_out=16):
     return info
 
 
-def _make_cubalif(name="1", size=16):
-    info = CubaLIFInfo(name=name, size=size, cur_decay=0.9, vol_decay=0.95, threshold=1.0)
+def _make_cubalif(name="1", shape=(16,)):
+    info = CubaLIFInfo(name=name, shape=shape, cur_decay=0.9, vol_decay=0.95, threshold=1.0)
     info.quantize()
     return info
 
 
-def _make_lif(name="1", size=16):
-    info = LIFInfo(name=name, size=size, decay=0.9, threshold=1.0)
+def _make_lif(name="1", shape=(16,)):
+    info = LIFInfo(name=name, shape=shape, decay=0.9, threshold=1.0)
     info.quantize()
     return info
 
 
-def _make_li(name="1", size=16):
-    info = LIInfo(name=name, size=size, decay=0.9)
+def _make_li(name="1", shape=(16,)):
+    info = LIInfo(name=name, shape=shape, decay=0.9)
     info.quantize()
     return info
 
 
-def _make_cubali(name="1", size=16):
-    info = CubaLIInfo(name=name, size=size, cur_decay=0.9, vol_decay=0.95)
+def _make_cubali(name="1", shape=(16,)):
+    info = CubaLIInfo(name=name, shape=shape, cur_decay=0.9, vol_decay=0.95)
     info.quantize()
     return info
 
@@ -82,7 +82,7 @@ def test_rescale_scales_match():
 
 
 def test_rescale_mlir_contains_snn_rescale():
-    rescale = RescaleInfo(name="0", size=16, _w_scale=7, _d_scale=12)
+    rescale = RescaleInfo(name="0", shape=(16,), _w_scale=7, _d_scale=12)
     lines, out_var = rescale.emit_mlir("%synapse_0", False, True)
     text = "\n".join(lines)
     assert "snn.rescale" in text

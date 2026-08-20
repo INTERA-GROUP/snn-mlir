@@ -7,8 +7,8 @@ import nir
 from ._base import NodeInfo
 from .cubali import parse_cubali
 from .cubalif import parse_cubalif
-from .li import parse_li
-from .lif import parse_lif
+from .li import parse_i, parse_li
+from .lif import parse_if, parse_lif
 from .linear import parse_affine, parse_linear
 
 # Maps NIR node type → parser(node, name) → NodeInfo.
@@ -22,4 +22,11 @@ NODE_PARSERS: dict[type, Callable[..., NodeInfo]] = {
     nir.CubaLI: parse_cubali,
     nir.LIF: parse_lif,
     nir.LI: parse_li,
+    # The non-leaky pair. They map onto the SAME two ops as their leaky
+    # counterparts — a separate PARSER, not a separate op, because the only
+    # difference is which fields NIR gives them (no tau, no v_leak) and the
+    # dialect cannot see that difference. Exactly the parse_linear/parse_affine
+    # pattern, where two NIR nodes share snn.linear.
+    nir.IF: parse_if,
+    nir.I: parse_i,
 }

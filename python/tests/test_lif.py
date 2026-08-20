@@ -31,7 +31,7 @@ def test_quantized_mlir_uses_q12(lif_quantized):
 
 
 def test_q12_scaling():
-    info = LIFInfo(name="2", size=8, decay=0.9, threshold=1.0, v_reset=0.0)
+    info = LIFInfo(name="2", shape=(8,), decay=0.9, threshold=1.0, v_reset=0.0)
     info.quantize()
     # 0.9 * 4096 ≈ 3686
     assert 3600 < info.decay_scaled < 3800
