@@ -238,21 +238,23 @@ Voltage-output ops (`snn.cubali`, `snn.li`) emit continuous membrane potential a
 
 ## NIR node mapping
 
-Each SNN op covers a family of NIR nodes. Integrate-and-fire variants (`nir.CubaIF`, `nir.IF`) map to the same op as their leaky counterparts with decay set to 1.0 (quantized: `decay_int = 1 << d_scale`), which disables the exponential leak.
+Each SNN op covers a family of NIR nodes. The non-leaky nodes (`nir.IF`, `nir.I`) reuse the same ops as their leaky counterparts with the decay set to 1.0 (quantized: `decay_int = 1 << d_scale`), which disables the exponential leak.
 
 | NIR node | SNN op | Notes |
 |---|---|---|
 | `nir.Linear` | `snn.linear` | No bias |
 | `nir.Affine` | `snn.linear` | Bias added as second operand |
-| `nir.CubaLIF` | `snn.cubalif` | `cur_decay`, `vol_decay` < 1 |
-| `nir.CubaIF` | `snn.cubalif` | `cur_decay = vol_decay = 1.0` (no leak) |
-| `nir.CubaLI` | `snn.cubali` | `cur_decay`, `vol_decay` < 1 |
-| `nir.CubaI` | `snn.cubali` | `cur_decay = vol_decay = 1.0` (no leak) |
-| `nir.LIF` | `snn.lif` | `decay` < 1 |
-| `nir.IF` | `snn.lif` | `decay = 1.0` (no leak) |
-| `nir.LI` | `snn.li` | `decay` < 1 |
-| `nir.I` | `snn.li` | `decay = 1.0` (no leak) |
+| `nir.CubaLIF` | `snn.cubalif` | `cur_decay`, `vol_decay` < 1, derived from `tau_syn`/`tau_mem`/`r` |
+| `nir.CubaLI` | `snn.cubali` | `cur_decay`, `vol_decay` < 1, derived from `tau_syn`/`tau_mem`/`r` |
+| `nir.LIF` | `snn.lif` | `decay` < 1, derived from `tau`/`r` |
+| `nir.IF` | `snn.lif` | `decay = 1.0` by definition; requires `r = 1` |
+| `nir.LI` | `snn.li` | `decay` < 1, derived from `tau`/`r` |
+| `nir.I` | `snn.li` | `decay = 1.0` by definition; requires `r = 1` |
 | _(internal)_ | `snn.rescale` | Inserted between `snn.linear` and neuron ops during quantized export; no NIR equivalent |
+
+Eight NIR node types map today; the table above is the complete list. NIR has no cumulative-current integrate-and-fire node — there is no `nir.CubaIF` or `nir.CubaI` — so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts.
+
+Note that `nir.IF`/`nir.I` are **not** the leaky parsers with the decay forced to 1: they carry no `tau` and no `v_leak`, so `decay = 1` is the definition of the node rather than a derived value, and `r` stops cancelling out of the input gain — which is why they require `r = 1` while `LIF`/`LI` accept any `r`. See [NIR mapping](https://snn-mlir.readthedocs.io/en/latest/python/nir-mapping/) for the derivation.
 
 ---
 

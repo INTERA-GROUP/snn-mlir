@@ -94,7 +94,7 @@ Each SNN op covers a family of NIR nodes:
 | _(internal)_ | `snn.rescale` | Inserted between `snn.linear` and neuron ops during quantized export; no NIR equivalent |
 
 NIR has no cumulative-current integrate-and-fire node — there is no `nir.CubaIF` or `nir.CubaI`
-— so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts. Six NIR node
+— so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts. Eight NIR node
 types map today; the table above is the complete list.
 
 ## Recurrence
