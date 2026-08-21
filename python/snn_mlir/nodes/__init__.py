@@ -1,6 +1,6 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-from ._base import NodeInfo
+from ._base import NeuronInfo, NodeInfo, SynapseInfo
 from ._registry import NODE_PARSERS
 from ._rescale import RescaleInfo
 from .cubali import CubaLIInfo, parse_cubali
@@ -16,8 +16,10 @@ __all__ = [
     "LIFInfo",
     "LIInfo",
     "LinearInfo",
+    "NeuronInfo",
     "NodeInfo",
     "RescaleInfo",
+    "SynapseInfo",
     "parse_affine",
     "parse_cubali",
     "parse_cubalif",

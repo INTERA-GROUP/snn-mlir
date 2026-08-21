@@ -1,6 +1,8 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+import math
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -8,18 +10,13 @@ from .._cname import c_identifier
 
 
 def nir_shape(types: dict | None, key: str, *, node: str) -> tuple[int, ...]:
-    """One NIR ``input_type``/``output_type`` entry as a plain tuple of ints.
+    """One NIR ``input_type``/``output_type`` entry as a tuple of ints.
 
     NIR stores these as ``{"input": np.array([...])}``. Reading element ``[0]``
-    of that array — which every neuron parser used to do — silently truncates
-    anything past rank 1: a ``(16, 16, 16)`` feature map reads back as 16
-    neurons instead of 4096. Taking the whole entry is the only correct answer,
-    and ``NodeInfo.size`` derives the flat count from it.
-
-    Raises when the entry is missing: NIR nodes constructed in Python (rather
-    than read from a file) can carry no shape at all — ``SumPool2d`` and
-    ``AvgPool2d`` null theirs unconditionally in ``__post_init__`` — and a
-    silently-zero shape would be far worse than a refusal.
+    truncates anything past rank 1 (a ``(16, 16, 16)`` feature map would read
+    back as 16), so the whole entry is taken and ``NodeInfo.size`` derives the
+    flat count from it. Raises when the entry is missing rather than yielding a
+    silently-zero shape: NIR nodes built in Python can carry no shape at all.
     """
     entry = (types or {}).get(key)
     if entry is None:
@@ -35,12 +32,7 @@ def memref_type(shape: tuple[int, ...], elem: str) -> str:
     """The MLIR memref type for a tensor of `shape` holding `elem` scalars.
 
     ``(200,), "f32"`` → ``memref<200xf32>``; ``(16, 16, 16), "i8"`` →
-    ``memref<16x16x16xi8>``. Emitters build type strings by hand in a dozen
-    places, and every one of them used to interpolate a single flat count, which
-    is only correct while every layer is rank 1. Routing them through one helper
-    means a rank-changing layer needs no new formatting code — and, more to the
-    point, that there is exactly one place where the ``x``-separated MLIR spelling
-    is known.
+    ``memref<16x16x16xi8>``. The one place the ``x``-separated spelling lives.
     """
     if not shape:
         raise ValueError(
@@ -51,13 +43,17 @@ def memref_type(shape: tuple[int, ...], elem: str) -> str:
     return f"memref<{dims}x{elem}>"
 
 
+@dataclass
 class NodeInfo(ABC):
     """Base class for parsed NIR nodes.
 
     Trait properties default to False / None so graph-level logic can branch on
     ``is_synapse`` / ``is_neuron`` without isinstance checks, keeping the graph
-    walker independent of concrete node types.
+    walker independent of concrete node types. ``NeuronInfo`` and ``SynapseInfo``
+    specialise the two roles.
     """
+
+    name: str
 
     # ── naming ────────────────────────────────────────────────────────────────
 
@@ -68,7 +64,7 @@ class NodeInfo(ABC):
         MLIR emission uses ``name`` verbatim (MLIR identifiers allow dots);
         every C generator derives its variable/macro names from this instead.
         """
-        return c_identifier(self.name)  # type: ignore[attr-defined]
+        return c_identifier(self.name)
 
     # ── classification traits ─────────────────────────────────────────────────
 
@@ -84,32 +80,24 @@ class NodeInfo(ABC):
 
     # ── shape traits ──────────────────────────────────────────────────────────
     #
-    # Every layer knows the shape of the tensor it reads and the one it writes.
-    # For the fully-connected set both are rank-1, but the graph walk propagates
-    # them generically so a rank-changing node (Conv2d, pooling, Flatten) drops
-    # in without the walk learning what it does. ``None`` means "this layer does
-    # not constrain the shape" and propagation passes through it unchanged.
+    # Every layer reports the shape it reads and the one it writes; the graph
+    # walk propagates them generically so a rank-changing node (Conv2d, pooling,
+    # Flatten) drops in without the walk learning what it does. ``None`` means
+    # "unconstrained" and propagation passes through unchanged.
 
     @property
     def in_shape(self) -> tuple[int, ...] | None:
-        """Shape of the tensor this layer reads, or None if unconstrained."""
         return None
 
     @property
     def out_shape(self) -> tuple[int, ...] | None:
-        """Shape of the tensor this layer writes, or None if unconstrained."""
         return None
 
     def adopt_in_shape(self, shape: tuple[int, ...]) -> None:  # noqa: B027
         """Take the shape propagated from this layer's predecessor.
 
-        Shape-preserving layers (neurons, rescale) override this to record the
-        shape they were handed; layers whose output shape is fixed by their own
-        parameters (a synapse's weight matrix) leave it a no-op. Called by
-        ``_graph.parse_graph`` in execution order, so a layer is always handed
-        the shape its predecessor actually produces rather than the one NIR
-        declared for it (NIR's own inference is not always right — see
-        docs/python/nir-mapping.md).
+        Shape-preserving layers record it; layers whose output shape is fixed by
+        their own parameters (a synapse's weight matrix) leave this a no-op.
         """
 
     # ── weight traits (synapse layers) ────────────────────────────────────────
@@ -182,13 +170,9 @@ class NodeInfo(ABC):
         """``(name, memref type)`` for each state buffer this layer needs.
 
         These are function arguments, so their types are half of the positional
-        C ABI: the generated descriptors in ``_codegen`` must agree with them
-        exactly. Implementations still spell them from the flat ``size``, which
-        pins them to rank 1 — deliberately, because widening them is not a
-        dialect change but an ABI change, and it has to move together with the
-        C side and with ``%input``/``%output`` in ``_emit``. The op bodies have
-        already moved to ``memref_type(shape, …)``; at rank 1 the two spellings
-        are the same string, so nothing disagrees today.
+        C ABI and must match the descriptors ``_codegen`` generates. Spelled
+        from the flat ``size`` (rank-1): widening them is an ABI change, not a
+        dialect one, and has to move together with the C side and ``_emit``.
         """
         return []
 
@@ -202,3 +186,49 @@ class NodeInfo(ABC):
         quantize: bool,
     ) -> tuple[list[str], str]:
         """Return (lines, output_var). output_var becomes input_var for next node."""
+
+
+@dataclass
+class NeuronInfo(NodeInfo):
+    """A point neuron: state-carrying, elementwise, shape-preserving.
+
+    Base for CubaLIF, LIF, CubaLI and LI. Owns the shape it carries; concrete
+    neurons add their decays, threshold and reset, and the neuron/MLIR traits.
+    """
+
+    shape: tuple[int, ...]
+
+    @property
+    def is_neuron(self) -> bool:
+        return True
+
+    @property
+    def size(self) -> int:
+        """Flat element count — what the emitters and the C ABI measure in."""
+        return math.prod(self.shape)
+
+    @property
+    def in_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    @property
+    def out_shape(self) -> tuple[int, ...]:
+        return self.shape
+
+    def adopt_in_shape(self, shape: tuple[int, ...]) -> None:
+        # Shape-preserving: the neuron takes whatever its predecessor produced.
+        self.shape = shape
+
+
+@dataclass
+class SynapseInfo(NodeInfo):
+    """A weight-carrying layer: the shape is decided here, not carried through.
+
+    Base for Linear/Affine (and Conv, later). The weight matrix fixes both ends,
+    so ``adopt_in_shape`` stays the base no-op; concrete synapses supply their
+    own ``in_shape``/``out_shape`` and the weight traits.
+    """
+
+    @property
+    def is_synapse(self) -> bool:
+        return True

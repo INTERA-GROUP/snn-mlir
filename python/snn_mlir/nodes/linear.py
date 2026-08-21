@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import nir
 import numpy as np
 
-from ._base import NodeInfo
+from ._base import SynapseInfo
 
 __all__ = ["LinearInfo", "parse_affine", "parse_linear"]
 
@@ -20,8 +20,7 @@ _D_SCALE = 12
 
 
 @dataclass
-class LinearInfo(NodeInfo):
-    name: str
+class LinearInfo(SynapseInfo):
     input_size: int
     output_size: int
     weights: np.ndarray
@@ -30,19 +29,10 @@ class LinearInfo(NodeInfo):
     _quantized_weights: np.ndarray | None = field(default=None, init=False)
     _quantized_bias: np.ndarray | None = field(default=None, init=False)
 
-    # ── classification traits ─────────────────────────────────────────────────
-
-    @property
-    def is_synapse(self) -> bool:
-        return True
-
     # ── shape traits ──────────────────────────────────────────────────────────
     #
-    # A synapse is where the shape is DECIDED, not carried: the weight matrix
-    # fixes both ends, so `adopt_in_shape` stays the base class's no-op and a
-    # mismatch against the propagated shape is reported by the graph walk.
     # `snn.linear` is strictly rank-1 (see docs/python/nir-mapping.md); the
-    # rank-changing nodes are Conv2d, the pooling family, and Flatten.
+    # rank-changing synapses are Conv2d, pooling and Flatten.
 
     @property
     def in_shape(self) -> tuple[int, ...]:

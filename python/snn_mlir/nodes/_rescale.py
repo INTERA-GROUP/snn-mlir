@@ -15,12 +15,14 @@ class RescaleInfo(NodeInfo):
     (w_scale) and the following neuron layer (d_scale).
     """
 
-    name: str
     shape: tuple[int, ...]
     _w_scale: int
     _d_scale: int
 
     # ── shape traits ──────────────────────────────────────────────────────────
+    #
+    # A rescale is a per-element shift, so it is shape-preserving like a neuron
+    # but is neither synapse nor neuron; it carries its own small shape block.
 
     @property
     def size(self) -> int:
@@ -36,7 +38,6 @@ class RescaleInfo(NodeInfo):
         return self.shape
 
     def adopt_in_shape(self, shape: tuple[int, ...]) -> None:
-        """A rescale is a per-element shift: it wears whatever it is fed."""
         self.shape = shape
 
     @property

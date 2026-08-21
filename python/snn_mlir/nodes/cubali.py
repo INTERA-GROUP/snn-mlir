@@ -1,12 +1,11 @@
 # Copyright 2026 N Vision Systems And Technologies SL
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-import math
 from dataclasses import dataclass, field
 
 import nir
 import numpy as np
 
-from ._base import NodeInfo, memref_type, nir_shape
+from ._base import NeuronInfo, memref_type, nir_shape
 
 __all__ = ["CubaLIInfo", "parse_cubali"]
 
@@ -14,38 +13,11 @@ _D_SCALE = 12
 
 
 @dataclass
-class CubaLIInfo(NodeInfo):
-    name: str
-    shape: tuple[int, ...]
+class CubaLIInfo(NeuronInfo):
     cur_decay: float
     vol_decay: float
     cur_decay_scaled: int | None = field(default=None, init=False)
     vol_decay_scaled: int | None = field(default=None, init=False)
-
-    # ── classification traits ─────────────────────────────────────────────────
-
-    @property
-    def is_neuron(self) -> bool:
-        return True
-
-    # ── shape traits ──────────────────────────────────────────────────────────
-
-    @property
-    def size(self) -> int:
-        """Flat element count — what the emitters and the C ABI measure in."""
-        return math.prod(self.shape)
-
-    @property
-    def in_shape(self) -> tuple[int, ...]:
-        return self.shape
-
-    @property
-    def out_shape(self) -> tuple[int, ...]:
-        return self.shape
-
-    def adopt_in_shape(self, shape: tuple[int, ...]) -> None:
-        """A point neuron is shape-preserving: it wears whatever it is fed."""
-        self.shape = shape
 
     # ── neuron traits ─────────────────────────────────────────────────────────
 
@@ -115,9 +87,9 @@ class CubaLIInfo(NodeInfo):
 
 
 def parse_cubali(node: nir.CubaLI, name: str) -> CubaLIInfo:
-    dt = float(node.tau_mem[0] / node.r[0])
-    cur_decay = float(1 - (dt / node.tau_syn[0]))
-    vol_decay = float(1 - (dt / node.tau_mem[0]))
+    dt = float(node.tau_mem.flat[0] / node.r.flat[0])
+    cur_decay = float(1 - (dt / node.tau_syn.flat[0]))
+    vol_decay = float(1 - (dt / node.tau_mem.flat[0]))
     shape = nir_shape(node.input_type, "input", node=name)
 
     # The discrete current update is current += k*input with k = w_in*dt/tau_syn.
