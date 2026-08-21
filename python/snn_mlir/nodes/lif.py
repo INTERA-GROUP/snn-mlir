@@ -166,8 +166,8 @@ def parse_if(node: nir.IF, name: str) -> LIFInfo:
         name=name,
         shape=nir_shape(node.input_type, "input", node=name),
         decay=1.0,
-        threshold=float(node.v_threshold.flat[0]),
-        v_reset=float(node.v_reset.flat[0]),
+        threshold=float(node.v_threshold[0]),
+        v_reset=float(node.v_reset[0]),
     )
 
 
