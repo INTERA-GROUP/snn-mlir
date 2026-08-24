@@ -185,3 +185,46 @@ func.func @conv2d_float_type_mismatch(
       : memref<16x16x16xf32>, memref<8x16x3x3xf32> -> memref<8x14x14xf16>
   return
 }
+
+// -----
+
+// snn.conv1d output length must follow (L + 2p - K)/s + 1.
+func.func @conv1d_bad_output_length(
+    %input:   memref<2x34xf32>,
+    %weights: memref<16x2x5xf32>,
+    %output:  memref<16x17xf32>
+) {
+  // expected-error @+1 {{output length (17) does not match (L+2p-K)/s+1 (16)}}
+  snn.conv1d ins(%input, %weights) out(%output)
+      {stride = 2 : i64, padding = 1 : i64}
+      : memref<2x34xf32>, memref<16x2x5xf32> -> memref<16x17xf32>
+  return
+}
+
+// -----
+
+// snn.conv1d weights in-channels must match the input channels.
+func.func @conv1d_channel_mismatch(
+    %input:   memref<2x16xf32>,
+    %weights: memref<8x3x3xf32>,
+    %output:  memref<8x14xf32>
+) {
+  // expected-error @+1 {{weights in-channels (3) must match input channels (2)}}
+  snn.conv1d ins(%input, %weights) out(%output)
+      : memref<2x16xf32>, memref<8x3x3xf32> -> memref<8x14xf32>
+  return
+}
+
+// -----
+
+// snn.conv1d in float mode is type-uniform across input, weights and output.
+func.func @conv1d_float_type_mismatch(
+    %input:   memref<16x16xf32>,
+    %weights: memref<8x16x3xf32>,
+    %output:  memref<8x14xf16>
+) {
+  // expected-error @+1 {{float mode requires input, weights, and output to share the same float element type}}
+  snn.conv1d ins(%input, %weights) out(%output)
+      : memref<16x16xf32>, memref<8x16x3xf32> -> memref<8x14xf16>
+  return
+}

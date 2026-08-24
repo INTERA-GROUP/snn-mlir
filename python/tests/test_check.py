@@ -71,27 +71,23 @@ def test_accepts_a_path(tmp_path, nir_linear_cubalif):
 def test_unsupported_node_type_is_reported_per_node():
     g = _graph(
         {
-            # Conv1d infers a [channels, length] input; NIRGraph type-checks the
-            # edge on construction, so the terminal has to match its rank.
-            "input": nir.Input(input_type={"input": np.array([1, 8])}),
-            "conv": nir.Conv1d(
-                input_shape=8,
-                weight=np.zeros((4, 1, 3), dtype=np.float32),
-                stride=1,
-                padding=0,
-                dilation=1,
-                groups=1,
-                bias=np.zeros(4, dtype=np.float32),
+            # Flatten collapses [4, 6] into [24]; NIRGraph type-checks the edge on
+            # construction, so the terminals have to match its ranks.
+            "input": nir.Input(input_type={"input": np.array([4, 6])}),
+            "flatten": nir.Flatten(
+                start_dim=0,
+                end_dim=-1,
+                input_type={"input": np.array([4, 6])},
             ),
-            "output": nir.Output(output_type={"output": np.array([4, 6])}),
+            "output": nir.Output(output_type={"output": np.array([24])}),
         },
-        [("input", "conv"), ("conv", "output")],
+        [("input", "flatten"), ("flatten", "output")],
     )
     report = check(g)
     assert not report.ok
     (finding,) = [f for f in report.findings if f.kind == "unsupported_type"]
-    assert finding.node == "conv"
-    assert "Conv1d" in finding.message
+    assert finding.node == "flatten"
+    assert "Flatten" in finding.message
 
 
 def test_v_reset_rejection_carries_the_parsers_own_message():

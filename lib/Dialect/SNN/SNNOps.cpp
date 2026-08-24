@@ -197,6 +197,68 @@ LogicalResult snn::Conv2dOp::verify() {
 }
 
 // -----------------------------------------------------------------------
+// snn.conv1d
+// -----------------------------------------------------------------------
+//
+// Activations are rank-2 [C, L]; weights rank-3 [O, C, K]. The element-type
+// contract mirrors snn.conv2d (float: all one float type; i8 weights → i32
+// output). The single spatial dim is checked against the conv formula when
+// static; dynamic dims are accepted, as elsewhere in this file.
+LogicalResult snn::Conv1dOp::verify() {
+  auto inTy = memrefOf(getInput());
+  auto wTy = memrefOf(getWeights());
+  auto outTy = memrefOf(getOutput());
+
+  if (inTy.getRank() != 2 || outTy.getRank() != 2 || wTy.getRank() != 3)
+    return emitOpError("expects rank-2 input/output [C,L] and rank-3 "
+                       "weights [O,C,K]");
+
+  int64_t C = inTy.getDimSize(0), L = inTy.getDimSize(1);
+  int64_t O = outTy.getDimSize(0);
+  int64_t wO = wTy.getDimSize(0), wC = wTy.getDimSize(1), K = wTy.getDimSize(2);
+
+  auto known = [](int64_t d) { return !ShapedType::isDynamic(d); };
+
+  if (known(wC) && known(C) && wC != C)
+    return emitOpError("weights in-channels (")
+           << wC << ") must match input channels (" << C << ")";
+  if (known(wO) && known(O) && wO != O)
+    return emitOpError("weights out-channels (")
+           << wO << ") must match output channels (" << O << ")";
+  if (known(L) && known(K) && known(outTy.getDimSize(1))) {
+    int64_t expected = convOutDim(L, K, getStride(), getPadding());
+    if (outTy.getDimSize(1) != expected)
+      return emitOpError("output length (")
+             << outTy.getDimSize(1) << ") does not match (L+2p-K)/s+1 ("
+             << expected << ")";
+  }
+
+  Type inElem = inTy.getElementType();
+  if (isa<FloatType>(inElem)) {
+    if (wTy.getElementType() != inElem || outTy.getElementType() != inElem)
+      return emitOpError(
+          "float mode requires input, weights, and output to share the same "
+          "float element type");
+    if (getBias() && memrefOf(getBias()).getElementType() != inElem)
+      return emitOpError("float mode bias must share the float element type");
+  } else if (inElem.isInteger(8)) {
+    if (!wTy.getElementType().isInteger(8))
+      return emitOpError("quantized mode requires i8 weights");
+    if (!outTy.getElementType().isInteger(32))
+      return emitOpError("quantized mode requires i32 output");
+    if (getBias() && !memrefOf(getBias()).getElementType().isInteger(32))
+      return emitOpError("quantized mode bias must be i32");
+  } else {
+    return emitOpError("input element type must be a float or i8 (quantized)");
+  }
+
+  // Bias is one value per output channel.
+  if (getBias() && !sameLength(memrefOf(getBias()), O))
+    return emitOpError("bias length must match the output channels");
+  return success();
+}
+
+// -----------------------------------------------------------------------
 // snn.linear
 // -----------------------------------------------------------------------
 LogicalResult snn::LinearOp::verify() {

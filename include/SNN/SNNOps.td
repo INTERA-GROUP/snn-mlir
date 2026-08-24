@@ -112,6 +112,55 @@ def SNN_Conv2dOp : SNN_Op<"conv2d"> {
 }
 
 //===----------------------------------------------------------------------===//
+// snn.conv1d
+//===----------------------------------------------------------------------===//
+//
+// 1-D convolution synapse. Activations are rank-2 feature maps [C, L]
+// (channels, length — no batch dimension); weights are rank-3 [O, C, K]
+// (out-channels, in-channels, kernel), the NIR/PyTorch layout. As with
+// snn.conv2d, the lowering inserts the unit batch dimension the named linalg
+// conv wants, so nothing above the dialect carries a batch axis.
+//
+//   Float mode:     memref<CxLxf32>, memref<OxCxKxf32> -> memref<OxLoxf32>
+//   Quantized mode: memref<CxLxi8>,  memref<OxCxKxi8>   -> memref<OxLoxi32>
+//
+// stride and padding are single scalars (one spatial axis), dilation is 1 and
+// groups is 1. NIR nodes carrying anything else are rejected at parse time.
+
+def SNN_Conv1dOp : SNN_Op<"conv1d"> {
+  let summary = "1-D convolution synapse layer";
+  let description = [{
+    Computes a 1-D convolution output = weights ⊛ input over the spatial
+    dimension, with an optional per-output-channel bias. Activations are
+    rank-2 [C, L]; weights are rank-3 [O, C, K]. Supports both f32 and
+    quantized i8 operands. In quantized mode, w_scale records the power-of-2
+    weight scale factor.
+
+    Output length follows the standard formula:
+      Lo = (L + 2*padding - K) / stride + 1
+  }];
+
+  let arguments = (ins
+    Arg<AnyMemRef, "input feature map", [MemRead]>:$input,
+    Arg<AnyMemRef, "weight tensor", [MemRead]>:$weights,
+    Arg<AnyMemRef, "output feature map", [MemWrite]>:$output,
+    Arg<Optional<AnyMemRef>, "bias vector", [MemRead]>:$bias,
+    DefaultValuedAttr<I64Attr, "1">:$stride,
+    DefaultValuedAttr<I64Attr, "0">:$padding,
+    DefaultValuedAttr<I64Attr, "0">:$w_scale
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    `ins` `(` $input `,` $weights `)` (`bias` `(` $bias^ `:` type($bias) `)`)?
+    `out` `(` $output `)` attr-dict `:` type($input) `,` type($weights) `->` type($output)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // snn.rescale
 //===----------------------------------------------------------------------===//
 //

@@ -4,6 +4,7 @@ from ._base import NeuronInfo, NodeInfo, SynapseInfo
 from ._registry import NODE_PARSERS
 from ._rescale import RescaleInfo
 from .conv import ConvInfo, parse_conv2d
+from .conv1d import Conv1dInfo, parse_conv1d
 from .cubali import CubaLIInfo, parse_cubali
 from .cubalif import CubaLIFInfo, parse_cubalif
 from .li import LIInfo, parse_i, parse_li
@@ -12,6 +13,7 @@ from .linear import LinearInfo, parse_affine, parse_linear
 
 __all__ = [
     "NODE_PARSERS",
+    "Conv1dInfo",
     "ConvInfo",
     "CubaLIFInfo",
     "CubaLIInfo",
@@ -23,6 +25,7 @@ __all__ = [
     "RescaleInfo",
     "SynapseInfo",
     "parse_affine",
+    "parse_conv1d",
     "parse_conv2d",
     "parse_cubali",
     "parse_cubalif",
