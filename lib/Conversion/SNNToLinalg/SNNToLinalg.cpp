@@ -215,7 +215,7 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
           /*offsets=*/ArrayRef<int64_t>{0, ph, pw},
           /*sizes=*/ArrayRef<int64_t>{C, H, W},
           /*strides=*/ArrayRef<int64_t>{1, 1, 1});
-      memref::CopyOp::create(rewriter, loc, input, interior);
+      linalg::CopyOp::create(rewriter, loc, input, interior);
       convInput = padded;
     }
 
@@ -314,7 +314,7 @@ struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
           /*offsets=*/ArrayRef<int64_t>{0, pad},
           /*sizes=*/ArrayRef<int64_t>{C, L},
           /*strides=*/ArrayRef<int64_t>{1, 1});
-      memref::CopyOp::create(rewriter, loc, input, interior);
+      linalg::CopyOp::create(rewriter, loc, input, interior);
       convInput = padded;
     }
 
@@ -361,6 +361,92 @@ struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
             linalg::YieldOp::create(b, loc, sum);
           });
     }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+//  Pattern: snn.sumpool2d → linalg.pooling_nchw_sum (float)
+//
+//  Same bracketing as LowerConv2d, minus the weights: rank-3 [C, H, W]
+//  activations are padded explicitly (valid-pool only), expanded with a
+//  unit-batch memref.expand_shape to the [N, C, H, W] the named pooling op
+//  wants, and reduced by linalg.pooling_nchw_sum. That op takes a window-shaped
+//  operand whose *values are ignored* — only its shape [Kh, Kw] defines the
+//  window — so a throwaway alloca stands in for it.
+//===----------------------------------------------------------------------===//
+struct LowerSumPool2d : public OpRewritePattern<snn::SumPool2dOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(snn::SumPool2dOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value input = op.getInput();
+    Value output = op.getOutput();
+
+    if (!isFloatMemRef(input))
+      return rewriter.notifyMatchFailure(
+          op, "only the float sumpool2d lowering is implemented");
+
+    auto inTy = cast<MemRefType>(input.getType());
+    Type elemTy = inTy.getElementType();
+    int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
+
+    ArrayRef<int64_t> kernel = op.getKernel();
+    ArrayRef<int64_t> stride = op.getStride();
+    ArrayRef<int64_t> padding = op.getPadding();
+    int64_t ph = padding[0], pw = padding[1];
+
+    // ── materialize padding (valid-pool only), else pool the input ────────────
+    Value poolInput = input;
+    if (ph != 0 || pw != 0) {
+      int64_t Hp = H + 2 * ph, Wp = W + 2 * pw;
+      auto padTy = MemRefType::get({C, Hp, Wp}, elemTy);
+      Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
+      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
+                                              rewriter.getFloatAttr(elemTy, 0.0));
+      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      Value interior = memref::SubViewOp::create(
+          rewriter, loc, padded,
+          /*offsets=*/ArrayRef<int64_t>{0, ph, pw},
+          /*sizes=*/ArrayRef<int64_t>{C, H, W},
+          /*strides=*/ArrayRef<int64_t>{1, 1, 1});
+      linalg::CopyOp::create(rewriter, loc, input, interior);
+      poolInput = padded;
+    }
+
+    // ── bracket with the unit batch dimension the named pooling op wants ──────
+    // reassociation [[0,1],[2],[3]]: batch is folded onto the channel axis.
+    SmallVector<ReassociationIndices> reassoc = {{0, 1}, {2}, {3}};
+    auto pool4dTy = [&](Value v) {
+      auto t = cast<MemRefType>(v.getType());
+      return MemRefType::get({1, t.getDimSize(0), t.getDimSize(1),
+                              t.getDimSize(2)},
+                             elemTy);
+    };
+    Value in4d = memref::ExpandShapeOp::create(rewriter, loc, pool4dTy(poolInput),
+                                               poolInput, reassoc);
+    Value out4d = memref::ExpandShapeOp::create(rewriter, loc, pool4dTy(output),
+                                                output, reassoc);
+
+    // pooling_nchw_sum accumulates into its output, so zero it first.
+    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
+                                            rewriter.getFloatAttr(elemTy, 0.0));
+    linalg::FillOp::create(rewriter, loc, fzero, out4d);
+
+    // The window operand: only its shape [Kh, Kw] matters to the named op.
+    auto winTy = MemRefType::get({kernel[0], kernel[1]}, elemTy);
+    Value window = memref::AllocaOp::create(rewriter, loc, winTy);
+
+    auto i64Vec = [&](ArrayRef<int64_t> v) {
+      return rewriter.getI64TensorAttr(v);
+    };
+    linalg::PoolingNchwSumOp::create(
+        rewriter, loc, TypeRange{}, ValueRange{in4d, window},
+        ValueRange{out4d},
+        /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
 
     rewriter.eraseOp(op);
     return success();
@@ -733,7 +819,7 @@ struct ConvertSNNToLinalgPass
   // base (declared in Passes.td).
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
-    patterns.add<LowerLinear, LowerConv2d, LowerConv1d, LowerRescale, LowerCubaLIF, LowerCubaLI, LowerLIF, LowerLI>(&getContext());
+    patterns.add<LowerLinear, LowerConv2d, LowerConv1d, LowerSumPool2d, LowerRescale, LowerCubaLIF, LowerCubaLI, LowerLIF, LowerLI>(&getContext());
 
     ConversionTarget target(getContext());
     // SNN ops must be eliminated

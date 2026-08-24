@@ -285,3 +285,31 @@ func.func @conv1d_quantized_bias(
       : memref<16x16xi8>, memref<8x16x3xi8> -> memref<8x14xi32>
   return
 }
+
+// ── snn.sumpool2d ─────────────────────────────────────────────────────────────
+
+// CHECK-LABEL: func.func @sumpool2d_float
+// CHECK: snn.sumpool2d
+func.func @sumpool2d_float(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<16x8x8xf32>
+) {
+  snn.sumpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<16x8x8xf32>
+  return
+}
+
+// Sum pooling is scale-preserving, so the quantized contract is i8 -> i8 (the
+// lowering arrives in a later change; parsing and verification are covered now).
+// CHECK-LABEL: func.func @sumpool2d_quantized
+// CHECK: snn.sumpool2d
+func.func @sumpool2d_quantized(
+    %input:  memref<8x8x8xi8>,
+    %output: memref<8x4x4xi8>
+) {
+  snn.sumpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<8x8x8xi8> -> memref<8x4x4xi8>
+  return
+}

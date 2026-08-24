@@ -9,9 +9,11 @@ from .conv import parse_conv2d
 from .conv1d import parse_conv1d
 from .cubali import parse_cubali
 from .cubalif import parse_cubalif
+from .flatten import parse_flatten
 from .li import parse_i, parse_li
 from .lif import parse_if, parse_lif
 from .linear import parse_affine, parse_linear
+from .sumpool2d import parse_sumpool2d
 
 # Maps NIR node type → parser(node, name) → NodeInfo.
 # Add an entry here to support a new node type (e.g. Conv2d). Quantization lives
@@ -22,6 +24,8 @@ NODE_PARSERS: dict[type, Callable[..., NodeInfo]] = {
     nir.Affine: parse_affine,
     nir.Conv2d: parse_conv2d,
     nir.Conv1d: parse_conv1d,
+    nir.SumPool2d: parse_sumpool2d,
+    nir.Flatten: parse_flatten,
     nir.CubaLIF: parse_cubalif,
     nir.CubaLI: parse_cubali,
     nir.LIF: parse_lif,

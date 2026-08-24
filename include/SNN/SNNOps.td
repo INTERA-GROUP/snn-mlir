@@ -161,6 +161,54 @@ def SNN_Conv1dOp : SNN_Op<"conv1d"> {
 }
 
 //===----------------------------------------------------------------------===//
+// snn.sumpool2d
+//===----------------------------------------------------------------------===//
+//
+// 2-D sum pooling. Reduces each non-overlapping (or strided) spatial window to
+// the sum of its elements, per channel. Carries no weights. Activations are
+// rank-3 feature maps [C, H, W]; the channel count is preserved. As with
+// snn.conv2d, the lowering inserts the unit batch dimension the named linalg
+// pooling op wants, so nothing above the dialect carries a batch axis.
+//
+//   Float mode:     memref<CxHxWxf32> -> memref<CxHoxWoxf32>
+//   Quantized mode: memref<CxHxWxi8>  -> memref<CxHoxWoxi8>   (scale-preserving)
+//
+// Sum pooling is scale-preserving, so no rescale follows it. The quantized
+// element contract is i8 -> i8: a 2x2 window of 0/1 spikes sums to 0..4, still
+// a valid int8 (Session 5 lowers it; this session lowers float only).
+
+def SNN_SumPool2dOp : SNN_Op<"sumpool2d"> {
+  let summary = "2-D sum pooling layer";
+  let description = [{
+    Computes 2-D sum pooling: each output element is the sum of the input
+    elements in its window, per channel. Activations are rank-3 [C, H, W];
+    the channel count is preserved.
+
+    Output spatial size follows the standard formula:
+      Ho = (H + 2*padding[0] - kernel[0]) / stride[0] + 1
+      Wo = (W + 2*padding[1] - kernel[1]) / stride[1] + 1
+  }];
+
+  let arguments = (ins
+    Arg<AnyMemRef, "input feature map", [MemRead]>:$input,
+    Arg<AnyMemRef, "output feature map", [MemWrite]>:$output,
+    DenseI64ArrayAttr:$kernel,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{1, 1}">:$stride,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{0, 0}">:$padding,
+    DefaultValuedAttr<I64Attr, "0">:$w_scale
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    `ins` `(` $input `)` `out` `(` $output `)`
+    attr-dict `:` type($input) `->` type($output)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // snn.rescale
 //===----------------------------------------------------------------------===//
 //

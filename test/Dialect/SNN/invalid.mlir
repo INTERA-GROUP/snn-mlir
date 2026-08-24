@@ -228,3 +228,42 @@ func.func @conv1d_float_type_mismatch(
       : memref<16x16xf32>, memref<8x16x3xf32> -> memref<8x14xf16>
   return
 }
+
+// -----
+// snn.sumpool2d output height must follow (H + 2p - Kh)/s + 1.
+func.func @sumpool2d_bad_output_height(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<16x9x8xf32>
+) {
+  // expected-error @+1 {{output height (9) does not match (H+2p-Kh)/s+1 (8)}}
+  snn.sumpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<16x9x8xf32>
+  return
+}
+
+// -----
+// snn.sumpool2d preserves the channel count.
+func.func @sumpool2d_channel_mismatch(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<8x8x8xf32>
+) {
+  // expected-error @+1 {{pooling preserves channels: input (16) and output (8) channel counts must match}}
+  snn.sumpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<8x8x8xf32>
+  return
+}
+
+// -----
+// snn.sumpool2d in float mode is type-uniform across input and output.
+func.func @sumpool2d_type_mismatch(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<16x8x8xf16>
+) {
+  // expected-error @+1 {{float mode requires input and output to share the same float element type}}
+  snn.sumpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<16x8x8xf16>
+  return
+}

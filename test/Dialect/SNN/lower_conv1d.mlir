@@ -29,7 +29,7 @@ func.func @conv_plain(
 // CHECK:         %[[PAD:.*]] = memref.alloca() : memref<2x36xf32>
 // CHECK:         linalg.fill ins({{.*}}) outs(%[[PAD]]
 // CHECK:         memref.subview %[[PAD]][0, 1] [2, 34] [1, 1]
-// CHECK:         memref.copy %arg0
+// CHECK:         linalg.copy ins(%arg0
 // CHECK:         linalg.conv_1d_ncw_fcw {dilations = dense<1> : tensor<1xi64>, strides = dense<2> : tensor<1xi64>}
 // CHECK-NOT:     snn.conv1d
 func.func @conv_pad_stride(

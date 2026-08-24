@@ -7,9 +7,11 @@ from .conv import ConvInfo, parse_conv2d
 from .conv1d import Conv1dInfo, parse_conv1d
 from .cubali import CubaLIInfo, parse_cubali
 from .cubalif import CubaLIFInfo, parse_cubalif
+from .flatten import FlattenInfo, parse_flatten
 from .li import LIInfo, parse_i, parse_li
 from .lif import LIFInfo, parse_if, parse_lif
 from .linear import LinearInfo, parse_affine, parse_linear
+from .sumpool2d import SumPool2dInfo, parse_sumpool2d
 
 __all__ = [
     "NODE_PARSERS",
@@ -17,21 +19,25 @@ __all__ = [
     "ConvInfo",
     "CubaLIFInfo",
     "CubaLIInfo",
+    "FlattenInfo",
     "LIFInfo",
     "LIInfo",
     "LinearInfo",
     "NeuronInfo",
     "NodeInfo",
     "RescaleInfo",
+    "SumPool2dInfo",
     "SynapseInfo",
     "parse_affine",
     "parse_conv1d",
     "parse_conv2d",
     "parse_cubali",
     "parse_cubalif",
+    "parse_flatten",
     "parse_i",
     "parse_if",
     "parse_li",
     "parse_lif",
     "parse_linear",
+    "parse_sumpool2d",
 ]

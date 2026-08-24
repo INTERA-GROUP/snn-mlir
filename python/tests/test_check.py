@@ -71,23 +71,19 @@ def test_accepts_a_path(tmp_path, nir_linear_cubalif):
 def test_unsupported_node_type_is_reported_per_node():
     g = _graph(
         {
-            # Flatten collapses [4, 6] into [24]; NIRGraph type-checks the edge on
-            # construction, so the terminals have to match its ranks.
-            "input": nir.Input(input_type={"input": np.array([4, 6])}),
-            "flatten": nir.Flatten(
-                start_dim=0,
-                end_dim=-1,
-                input_type={"input": np.array([4, 6])},
-            ),
-            "output": nir.Output(output_type={"output": np.array([24])}),
+            # Delay is shape-preserving; NIRGraph type-checks the edge on
+            # construction, so the terminals share its rank.
+            "input": nir.Input(input_type={"input": np.array([4])}),
+            "delay": nir.Delay(delay=np.zeros(4)),
+            "output": nir.Output(output_type={"output": np.array([4])}),
         },
-        [("input", "flatten"), ("flatten", "output")],
+        [("input", "delay"), ("delay", "output")],
     )
     report = check(g)
     assert not report.ok
     (finding,) = [f for f in report.findings if f.kind == "unsupported_type"]
-    assert finding.node == "flatten"
-    assert "Flatten" in finding.message
+    assert finding.node == "delay"
+    assert "Delay" in finding.message
 
 
 def test_v_reset_rejection_carries_the_parsers_own_message():
