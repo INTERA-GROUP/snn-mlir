@@ -51,8 +51,8 @@ class CubaLIInfo(NeuronInfo):
     def state_func_args(self, quantize: bool) -> list[tuple[str, str]]:
         t = "i32" if quantize else "f32"
         return [
-            (f"%current_{self.name}", f"memref<{self.size}x{t}>"),
-            (f"%voltage_{self.name}", f"memref<{self.size}x{t}>"),
+            (f"%current_{self.name}", memref_type(self.shape, t)),
+            (f"%voltage_{self.name}", memref_type(self.shape, t)),
         ]
 
     # ── MLIR body emission ────────────────────────────────────────────────────

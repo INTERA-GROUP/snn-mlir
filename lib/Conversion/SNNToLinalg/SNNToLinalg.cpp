@@ -167,6 +167,110 @@ struct LowerLinear : public OpRewritePattern<snn::LinearOp> {
 };
 
 //===----------------------------------------------------------------------===//
+//  Pattern: snn.conv2d → linalg.conv_2d_nchw_fchw (float)
+//
+//  Activations are rank-3 [C, H, W]; the named linalg conv is rank-4 (it wants
+//  a leading batch axis), so the pattern brackets the conv with a unit-batch
+//  memref.expand_shape on both input and output. Padding is materialized
+//  explicitly — the named conv models only the valid convolution, so a padded
+//  input is a fresh zero-filled buffer with the real input copied into its
+//  interior (the bufferized form of tensor.pad). Bias, when present, is a
+//  per-output-channel value broadcast over the spatial dimensions.
+//===----------------------------------------------------------------------===//
+struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(snn::Conv2dOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value input = op.getInput();
+    Value weights = op.getWeights();
+    Value output = op.getOutput();
+
+    if (!isFloatMemRef(input))
+      return rewriter.notifyMatchFailure(
+          op, "only the float conv2d lowering is implemented");
+
+    auto inTy = cast<MemRefType>(input.getType());
+    auto outTy = cast<MemRefType>(output.getType());
+    Type elemTy = inTy.getElementType();
+    int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
+
+    ArrayRef<int64_t> stride = op.getStride();
+    ArrayRef<int64_t> padding = op.getPadding();
+    int64_t ph = padding[0], pw = padding[1];
+
+    // ── materialize padding (valid-conv only), else convolve the input ────────
+    Value convInput = input;
+    if (ph != 0 || pw != 0) {
+      int64_t Hp = H + 2 * ph, Wp = W + 2 * pw;
+      auto padTy = MemRefType::get({C, Hp, Wp}, elemTy);
+      Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
+      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
+                                              rewriter.getFloatAttr(elemTy, 0.0));
+      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      // Copy the real input into the [0:C, ph:ph+H, pw:pw+W] interior.
+      Value interior = memref::SubViewOp::create(
+          rewriter, loc, padded,
+          /*offsets=*/ArrayRef<int64_t>{0, ph, pw},
+          /*sizes=*/ArrayRef<int64_t>{C, H, W},
+          /*strides=*/ArrayRef<int64_t>{1, 1, 1});
+      memref::CopyOp::create(rewriter, loc, input, interior);
+      convInput = padded;
+    }
+
+    // ── bracket with the unit batch dimension the named conv wants ────────────
+    // reassociation [[0,1],[2],[3]]: batch is folded onto the channel axis.
+    SmallVector<ReassociationIndices> reassoc = {{0, 1}, {2}, {3}};
+    auto conv4dTy = [&](Value v) {
+      auto t = cast<MemRefType>(v.getType());
+      return MemRefType::get({1, t.getDimSize(0), t.getDimSize(1),
+                              t.getDimSize(2)},
+                             elemTy);
+    };
+    Value in4d = memref::ExpandShapeOp::create(rewriter, loc, conv4dTy(convInput),
+                                               convInput, reassoc);
+    Value out4d = memref::ExpandShapeOp::create(rewriter, loc, conv4dTy(output),
+                                                output, reassoc);
+
+    // conv_2d_nchw_fchw accumulates into its output, so zero it first.
+    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
+                                            rewriter.getFloatAttr(elemTy, 0.0));
+    linalg::FillOp::create(rewriter, loc, fzero, out4d);
+
+    auto i64Vec = [&](ArrayRef<int64_t> v) {
+      return rewriter.getI64TensorAttr(v);
+    };
+    linalg::Conv2DNchwFchwOp::create(
+        rewriter, loc, TypeRange{}, ValueRange{in4d, weights},
+        ValueRange{out4d},
+        /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
+
+    // ── optional per-output-channel bias, broadcast over H×W ──────────────────
+    Value bias = op.getBias();
+    if (bias) {
+      MLIRContext *ctx = rewriter.getContext();
+      SmallVector<AffineMap> biasMaps = {
+          AffineMap::get(3, 0, {rewriter.getAffineDimExpr(0)}, ctx), // bias[o]
+          rewriter.getMultiDimIdentityMap(3),                        // out[o,h,w]
+      };
+      SmallVector<utils::IteratorType> biasIter(3, utils::IteratorType::parallel);
+      linalg::GenericOp::create(
+          rewriter, loc, TypeRange{}, ValueRange{bias}, ValueRange{output},
+          biasMaps, biasIter,
+          [&](OpBuilder &b, Location loc, ValueRange args) {
+            Value bval = args[0], acc = args[1];
+            Value sum = arith::AddFOp::create(b, loc, acc, bval);
+            linalg::YieldOp::create(b, loc, sum);
+          });
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 //  Pattern: snn.rescale → linalg.generic with extsi + shli/shrsi
 //===----------------------------------------------------------------------===//
 struct LowerRescale : public OpRewritePattern<snn::RescaleOp> {
@@ -532,7 +636,7 @@ struct ConvertSNNToLinalgPass
   // base (declared in Passes.td).
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
-    patterns.add<LowerLinear, LowerRescale, LowerCubaLIF, LowerCubaLI, LowerLIF, LowerLI>(&getContext());
+    patterns.add<LowerLinear, LowerConv2d, LowerRescale, LowerCubaLIF, LowerCubaLI, LowerLIF, LowerLI>(&getContext());
 
     ConversionTarget target(getContext());
     // SNN ops must be eliminated

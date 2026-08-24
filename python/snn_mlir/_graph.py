@@ -13,6 +13,7 @@ branching, is rejected loudly.
 ``analyze_topology`` to report the same problems without raising.
 """
 
+import math
 import warnings
 from dataclasses import dataclass, field
 
@@ -304,8 +305,8 @@ class GraphInfo:
         return [self.nodes[name] for name in self.order]
 
     @property
-    def input_size(self) -> int:
-        """The network's input width: the entry synapse's input dimension.
+    def _entry_synapse(self) -> NodeInfo:
+        """The synapse the network input feeds.
 
         The entry node (successor of ``input``) defines it — NOT the first
         layer in ``order``, which for a recurrent graph is the recurrent
@@ -318,7 +319,19 @@ class GraphInfo:
             entry_layer = next((layer for layer in self if layer.is_synapse), None)
         if entry_layer is None:
             raise ValueError("No synapse (weight) layer found in graph.")
-        return entry_layer.weight_shape[1]
+        return entry_layer
+
+    @property
+    def input_shape(self) -> tuple[int, ...]:
+        """The network's input shape — rank-1 ``(N,)`` for a dense entry,
+        rank-3 ``(C, H, W)`` for a conv entry. The entry synapse reports it.
+        """
+        return self._entry_synapse.in_shape
+
+    @property
+    def input_size(self) -> int:
+        """The network's flat input width (product of :attr:`input_shape`)."""
+        return math.prod(self.input_shape)
 
     @property
     def output_size(self) -> int:

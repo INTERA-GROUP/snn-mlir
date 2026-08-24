@@ -174,13 +174,11 @@ def generate_main_c(
     L.append('#include "input.h"')
     L.append("")
 
-    # ── memref descriptor typedefs ────────────────────────────────────────────
+    # ── memref descriptor typedefs + constructors (shape-driven) ──────────────
+    descriptors = _descriptor_types(graph, quantize)
     L.append(f"/* MLIR memref descriptors ({index_bits}-bit index) */")
-    if quantize:
-        L += _memref_typedef("Memref1Di8", "int8_t", 1, idx_t)
-        L += _memref_typedef("Memref1Di32", "int32_t", 1, idx_t)
-    else:
-        L += _memref_typedef("Memref1Df32", "float", 1, idx_t)
+    for rank, ctype in descriptors:
+        L += _memref_typedef(_desc_name(rank, ctype), ctype, rank, idx_t)
     L.append("")
 
     # ── extern function declaration ───────────────────────────────────────────
@@ -188,24 +186,24 @@ def generate_main_c(
     L.append("")
 
     # ── helper constructors ───────────────────────────────────────────────────
-    L += _mk_helpers(idx_t, quantize)
+    for rank, ctype in descriptors:
+        L += _maker_def(rank, ctype, idx_t)
     L.append("")
 
     # ── main ──────────────────────────────────────────────────────────────────
     L.append("int main(void) {")
 
     last_neuron = next((layer for layer in reversed(layers) if layer.is_neuron), None)
-    if quantize:
-        if last_neuron and last_neuron.output_element_type(quantize) == "i32":
-            out_t, out_desc_t, out_mk = "int32_t", "Memref1Di32", "mk1d_i32"
-        else:
-            out_t, out_desc_t, out_mk = "int8_t", "Memref1Di8", "mk1d_i8"
-    else:
-        out_t, out_desc_t, out_mk = "float", "Memref1Df32", "mk1d_f32"
+    input_shape = graph.input_shape
+    in_rank = len(input_shape)
+    in_ctype = "int8_t" if quantize else "float"
+    out_ctype = _out_ctype(last_neuron, quantize)
+    out_shape = last_neuron.out_shape if last_neuron else (output_size,)
+    out_rank = len(out_shape)
 
     if not quantize:
         L.append("    float input_buf[INPUT_SIZE];")
-    L.append(f"    {out_t} output_buf[OUTPUT_SIZE];")
+    L.append(f"    {out_ctype} output_buf[OUTPUT_SIZE];")
     L.append("")
 
     # state arrays (+ one previous-spikes buffer per recurrent neuron)
@@ -224,31 +222,36 @@ def generate_main_c(
             )
     L.append("")
 
-    # static descriptors
+    # static descriptors (shape follows the buffer: rank-3 for a conv feature map)
     if not quantize:
-        L.append("    Memref1Df32 in_desc = mk1d_f32(input_buf, INPUT_SIZE);")
-    L.append(f"    {out_desc_t} out_desc = {out_mk}(output_buf, OUTPUT_SIZE);")
+        L.append(
+            f"    {_desc_name(in_rank, 'float')} in_desc"
+            f" = {_mk_call(in_rank, 'float', 'input_buf', input_shape)};",
+        )
+    L.append(
+        f"    {_desc_name(out_rank, out_ctype)} out_desc"
+        f" = {_mk_call(out_rank, out_ctype, 'output_buf', out_shape)};",
+    )
 
     # Weights are baked into network.mlir as constant globals — no descriptors here.
 
     # state descriptors (+ previous-spikes descriptors, spike-typed)
-    s_desc_t = "Memref1Di32" if quantize else "Memref1Df32"
-    s_mk = "mk1d_i32" if quantize else "mk1d_f32"
-    spk_desc_t = "Memref1Di8" if quantize else "Memref1Df32"
-    spk_mk = "mk1d_i8" if quantize else "mk1d_f32"
+    s_ctype = "int32_t" if quantize else "float"
+    spk_ctype = "int8_t" if quantize else "float"
     for name in graph.order:
         layer = graph.nodes[name]
         if layer.is_neuron:
+            rank = len(layer.out_shape)
             for sname in layer.state_names:
                 L.append(
-                    f"    {s_desc_t} {sname[0]}{layer.c_name}_desc"
-                    f" = {s_mk}({sname}_{layer.c_name}, {layer.state_size_define});",
+                    f"    {_desc_name(rank, s_ctype)} {sname[0]}{layer.c_name}_desc"
+                    f" = {_mk_call(rank, s_ctype, f'{sname}_{layer.c_name}', layer.out_shape)};",
                 )
-        if name in recurrent_neurons:
-            L.append(
-                f"    {spk_desc_t} prev_{layer.c_name}_desc"
-                f" = {spk_mk}(prev_spikes_{layer.c_name}, {layer.state_size_define});",
-            )
+            if name in recurrent_neurons:
+                L.append(
+                    f"    {_desc_name(rank, spk_ctype)} prev_{layer.c_name}_desc"
+                    f" = {_mk_call(rank, spk_ctype, f'prev_spikes_{layer.c_name}', layer.out_shape)};",
+                )
     L.append("")
 
     # timestep loop
@@ -256,7 +259,9 @@ def generate_main_c(
     L.append(f"    for (int step = 0; step < {n_steps}; step++) {{")
 
     if quantize:
-        L.append("        Memref1Di8 in_desc = mk1d_i8((int8_t *)L0_input[step], INPUT_SIZE);")
+        desc = _desc_name(in_rank, "int8_t")
+        mk = _mk_call(in_rank, "int8_t", "(int8_t *)L0_input[step]", input_shape)
+        L.append(f"        {desc} in_desc = {mk};")
     else:
         L.append("        for (int i = 0; i < INPUT_SIZE; i++)")
         L.append("            input_buf[i] = (float)L0_input[step][i];")
@@ -293,6 +298,79 @@ def generate_main_c(
     (output_path / "main.c").write_text("\n".join(L) + "\n")
 
 
+# ── memref descriptors (shape-driven) ───────────────────────────────────────────
+#
+# A descriptor's rank follows its buffer's shape: rank-1 for a dense layer,
+# rank-3 for a conv feature map. Names carry the rank so a model that mixes both
+# (a conv stem into a dense head) gets one typedef per (rank, element type).
+
+_CTAG = {"int8_t": "i8", "int32_t": "i32", "float": "f32"}
+
+
+def _desc_name(rank: int, ctype: str) -> str:
+    return f"Memref{rank}D{_CTAG[ctype]}"
+
+
+def _mk_name(rank: int, ctype: str) -> str:
+    return f"mk{rank}d_{_CTAG[ctype]}"
+
+
+def _maker_def(rank: int, ctype: str, idx_t: str) -> list[str]:
+    """A ``mk<rank>d_<tag>`` constructor for a contiguous row-major buffer."""
+    dims = [f"d{i}" for i in range(rank)]
+    strides = ["*".join(dims[i + 1 :]) or "1" for i in range(rank)]
+    desc, mk = _desc_name(rank, ctype), _mk_name(rank, ctype)
+    params = ", ".join(f"{idx_t} {d}" for d in dims)
+    return [
+        f"static {desc} {mk}({ctype} *p, {params}) {{",
+        f"    return ({desc}){{p, p, 0, {{{', '.join(dims)}}}, {{{', '.join(strides)}}}}};",
+        "}",
+    ]
+
+
+def _mk_call(rank: int, ctype: str, ptr: str, shape: "tuple[int, ...]") -> str:
+    dims = ", ".join(str(int(d)) for d in shape)
+    return f"{_mk_name(rank, ctype)}({ptr}, {dims})"
+
+
+def _out_ctype(last_neuron: "NodeInfo | None", quantize: bool) -> str:
+    if not quantize:
+        return "float"
+    if last_neuron and last_neuron.output_element_type(quantize) == "i32":
+        return "int32_t"
+    return "int8_t"
+
+
+def _descriptor_types(graph: GraphInfo, quantize: bool) -> list[tuple[int, str]]:
+    """The unique ``(rank, C element type)`` pairs the harness needs, in order.
+
+    One per network input, neuron state buffer, recurrent previous-spikes buffer
+    and network output. Deduplicated so each typedef/constructor is emitted once.
+    """
+    recurrent = {neuron for neuron, _synapse in graph.recurrent_edges}
+    in_ct = "int8_t" if quantize else "float"
+    s_ct = "int32_t" if quantize else "float"
+    spk_ct = "int8_t" if quantize else "float"
+    last_neuron = next((lay for lay in reversed(graph.layers) if lay.is_neuron), None)
+
+    pairs: list[tuple[int, str]] = [(len(graph.input_shape), in_ct)]
+    for name in graph.order:
+        layer = graph.nodes[name]
+        if layer.is_neuron:
+            for _sname in layer.state_names:
+                pairs.append((len(layer.out_shape), s_ct))
+            if name in recurrent:
+                pairs.append((len(layer.out_shape), spk_ct))
+    if last_neuron is not None:
+        pairs.append((len(last_neuron.out_shape), _out_ctype(last_neuron, quantize)))
+
+    seen: list[tuple[int, str]] = []
+    for pair in pairs:
+        if pair not in seen:
+            seen.append(pair)
+    return seen
+
+
 # ── private helpers ────────────────────────────────────────────────────────────
 
 
@@ -309,49 +387,34 @@ def _memref_typedef(name: str, elem_t: str, rank: int, idx_t: str) -> list[str]:
 
 
 def _extern_signature(graph: GraphInfo, idx_t: str, quantize: bool) -> list[str]:
+    """The kernel's positional C ABI. Each pointer's descriptor rank matches its
+    buffer's shape (rank-3 for a conv feature map, rank-1 for a dense vector)."""
     last_neuron = next((layer for layer in reversed(graph.layers) if layer.is_neuron), None)
     recurrent_neurons = {neuron for neuron, _synapse in graph.recurrent_edges}
-    if quantize:
-        in_t, s_t, spk_t = "Memref1Di8", "Memref1Di32", "Memref1Di8"
-        out_t = (
-            "Memref1Di32"
-            if (last_neuron and last_neuron.output_element_type(True) == "i32")
-            else "Memref1Di8"
-        )
-    else:
-        in_t, s_t, spk_t = "Memref1Df32", "Memref1Df32", "Memref1Df32"
-        out_t = "Memref1Df32"
+    s_ctype = "int32_t" if quantize else "float"
+    spk_ctype = "int8_t" if quantize else "float"
+    in_ctype = "int8_t" if quantize else "float"
+
+    in_t = _desc_name(len(graph.input_shape), in_ctype)
+    out_t = _desc_name(
+        len(last_neuron.out_shape) if last_neuron else 1,
+        _out_ctype(last_neuron, quantize),
+    )
 
     # Weights are constant globals inside the module, not function arguments.
     args = [f"{in_t} *input"]
     for name in graph.order:
         layer = graph.nodes[name]
         if layer.is_neuron:
+            rank = len(layer.out_shape)
             for sname in layer.state_names:
-                args.append(f"{s_t} *{sname}_{layer.c_name}")
-        if name in recurrent_neurons:
-            args.append(f"{spk_t} *prev_spikes_{layer.c_name}")
+                args.append(f"{_desc_name(rank, s_ctype)} *{sname}_{layer.c_name}")
+            if name in recurrent_neurons:
+                args.append(f"{_desc_name(rank, spk_ctype)} *prev_spikes_{layer.c_name}")
     args.append(f"{out_t} *output")
 
     return [
         "extern void _mlir_ciface_snn_forward_step(",
         "    " + ",\n    ".join(args),
         ");",
-    ]
-
-
-def _mk_helpers(idx_t: str, quantize: bool) -> list[str]:
-    if quantize:
-        return [
-            f"static Memref1Di8 mk1d_i8(int8_t *p, {idx_t} n) {{",
-            "    return (Memref1Di8){p, p, 0, {n}, {1}};",
-            "}",
-            f"static Memref1Di32 mk1d_i32(int32_t *p, {idx_t} n) {{",
-            "    return (Memref1Di32){p, p, 0, {n}, {1}};",
-            "}",
-        ]
-    return [
-        f"static Memref1Df32 mk1d_f32(float *p, {idx_t} n) {{",
-        "    return (Memref1Df32){p, p, 0, {n}, {1}};",
-        "}",
     ]

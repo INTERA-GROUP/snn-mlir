@@ -28,6 +28,7 @@ Function-argument order — the positional C ABI contract with any caller
 
 from ._graph import GraphInfo, as_graph_info
 from .nodes import NodeInfo
+from .nodes._base import memref_type
 
 
 def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
@@ -40,8 +41,8 @@ def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
     graph = as_graph_info(layers)
     scalar_t = "i8" if quantize else "f32"
 
-    # ── infer network I/O sizes (GraphInfo.input_size documents the entry rule) ──
-    input_size = graph.input_size
+    # ── network I/O shapes (rank-1 for a dense entry, rank-N for a conv one) ──
+    input_shape = graph.input_shape
 
     last_neuron = next((layer for layer in reversed(graph) if layer.is_neuron), None)
     if last_neuron is None:
@@ -56,7 +57,7 @@ def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
 
     # ── function arguments (the positional C ABI — see module docstring) ──────
     args: list[tuple[str, str]] = [
-        ("%input", f"memref<{input_size}x{scalar_t}>"),
+        ("%input", memref_type(input_shape, scalar_t)),
     ]
     for name in graph.order:
         layer = graph.nodes[name]
@@ -68,7 +69,7 @@ def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
             )
 
     out_elem = last_neuron.output_element_type(quantize)
-    args.append(("%output", f"memref<{last_neuron.state_size}x{out_elem}>"))
+    args.append(("%output", memref_type(last_neuron.out_shape, out_elem)))
 
     # ── function body ─────────────────────────────────────────────────────────
     body: list[str] = []

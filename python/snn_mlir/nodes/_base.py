@@ -171,8 +171,8 @@ class NodeInfo(ABC):
 
         These are function arguments, so their types are half of the positional
         C ABI and must match the descriptors ``_codegen`` generates. Spelled
-        from the flat ``size`` (rank-1): widening them is an ABI change, not a
-        dialect one, and has to move together with the C side and ``_emit``.
+        from the layer's ``shape``, so a conv-fed neuron's state is a rank-N
+        feature map — the same rank its op body and the C descriptor use.
         """
         return []
 

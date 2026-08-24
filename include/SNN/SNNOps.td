@@ -61,6 +61,57 @@ def SNN_LinearOp : SNN_Op<"linear",
 }
 
 //===----------------------------------------------------------------------===//
+// snn.conv2d
+//===----------------------------------------------------------------------===//
+//
+// 2-D convolution synapse. Activations are rank-3 feature maps [C, H, W]
+// (channels, height, width — no batch dimension); weights are rank-4
+// [O, C, Kh, Kw] (out-channels, in-channels, kernel height/width), the
+// NIR/PyTorch layout. The lowering inserts the unit batch dimension the named
+// linalg conv wants, so nothing above the dialect carries a batch axis.
+//
+//   Float mode:     memref<CxHxWxf32>, memref<OxCxKhxKwxf32> -> memref<OxHoxWoxf32>
+//   Quantized mode: memref<CxHxWxi8>,  memref<OxCxKhxKwxi8>   -> memref<OxHoxWoxi32>
+//
+// Only the supported layout is modelled: `stride` and `padding` are the two
+// spatial axes each (symmetric padding), dilation is 1 and groups is 1. NIR
+// nodes carrying anything else are rejected at parse time, not here.
+
+def SNN_Conv2dOp : SNN_Op<"conv2d"> {
+  let summary = "2-D convolution synapse layer";
+  let description = [{
+    Computes a 2-D convolution output = weights ⊛ input over the spatial
+    dimensions, with an optional per-output-channel bias. Activations are
+    rank-3 [C, H, W]; weights are rank-4 [O, C, Kh, Kw]. Supports both f32 and
+    quantized i8 operands. In quantized mode, w_scale records the power-of-2
+    weight scale factor.
+
+    Output spatial size follows the standard formula:
+      Ho = (H + 2*padding[0] - Kh) / stride[0] + 1
+      Wo = (W + 2*padding[1] - Kw) / stride[1] + 1
+  }];
+
+  let arguments = (ins
+    Arg<AnyMemRef, "input feature map", [MemRead]>:$input,
+    Arg<AnyMemRef, "weight tensor", [MemRead]>:$weights,
+    Arg<AnyMemRef, "output feature map", [MemWrite]>:$output,
+    Arg<Optional<AnyMemRef>, "bias vector", [MemRead]>:$bias,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{1, 1}">:$stride,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{0, 0}">:$padding,
+    DefaultValuedAttr<I64Attr, "0">:$w_scale
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    `ins` `(` $input `,` $weights `)` (`bias` `(` $bias^ `:` type($bias) `)`)?
+    `out` `(` $output `)` attr-dict `:` type($input) `,` type($weights) `->` type($output)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // snn.rescale
 //===----------------------------------------------------------------------===//
 //

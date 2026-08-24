@@ -114,7 +114,87 @@ LogicalResult verifyNeuron(Operation *op, Value input, ArrayRef<Value> states,
   return success();
 }
 
+// The output extent of one spatial axis: (in + 2*pad - kernel)/stride + 1.
+int64_t convOutDim(int64_t in, int64_t kernel, int64_t stride, int64_t pad) {
+  return (in + 2 * pad - kernel) / stride + 1;
+}
+
 } // namespace
+
+// -----------------------------------------------------------------------
+// snn.conv2d
+// -----------------------------------------------------------------------
+//
+// Activations are rank-3 [C, H, W]; weights rank-4 [O, C, Kh, Kw]. The
+// element-type contract mirrors snn.linear (float: all one float type; i8
+// weights → i32 output). Spatial dims are checked against the conv formula
+// when static; dynamic dims are accepted, as elsewhere in this file.
+LogicalResult snn::Conv2dOp::verify() {
+  auto inTy = memrefOf(getInput());
+  auto wTy = memrefOf(getWeights());
+  auto outTy = memrefOf(getOutput());
+
+  if (inTy.getRank() != 3 || outTy.getRank() != 3 || wTy.getRank() != 4)
+    return emitOpError("expects rank-3 input/output [C,H,W] and rank-4 "
+                       "weights [O,C,Kh,Kw]");
+
+  ArrayRef<int64_t> stride = getStride();
+  ArrayRef<int64_t> padding = getPadding();
+  if (stride.size() != 2 || padding.size() != 2)
+    return emitOpError("stride and padding must each have 2 elements");
+
+  int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
+  int64_t O = outTy.getDimSize(0);
+  int64_t wO = wTy.getDimSize(0), wC = wTy.getDimSize(1);
+  int64_t Kh = wTy.getDimSize(2), Kw = wTy.getDimSize(3);
+
+  auto known = [](int64_t d) { return !ShapedType::isDynamic(d); };
+
+  if (known(wC) && known(C) && wC != C)
+    return emitOpError("weights in-channels (")
+           << wC << ") must match input channels (" << C << ")";
+  if (known(wO) && known(O) && wO != O)
+    return emitOpError("weights out-channels (")
+           << wO << ") must match output channels (" << O << ")";
+  if (known(H) && known(Kh) && known(outTy.getDimSize(1))) {
+    int64_t expected = convOutDim(H, Kh, stride[0], padding[0]);
+    if (outTy.getDimSize(1) != expected)
+      return emitOpError("output height (")
+             << outTy.getDimSize(1) << ") does not match (H+2p-Kh)/s+1 ("
+             << expected << ")";
+  }
+  if (known(W) && known(Kw) && known(outTy.getDimSize(2))) {
+    int64_t expected = convOutDim(W, Kw, stride[1], padding[1]);
+    if (outTy.getDimSize(2) != expected)
+      return emitOpError("output width (")
+             << outTy.getDimSize(2) << ") does not match (W+2p-Kw)/s+1 ("
+             << expected << ")";
+  }
+
+  Type inElem = inTy.getElementType();
+  if (isa<FloatType>(inElem)) {
+    if (wTy.getElementType() != inElem || outTy.getElementType() != inElem)
+      return emitOpError(
+          "float mode requires input, weights, and output to share the same "
+          "float element type");
+    if (getBias() && memrefOf(getBias()).getElementType() != inElem)
+      return emitOpError("float mode bias must share the float element type");
+  } else if (inElem.isInteger(8)) {
+    if (!wTy.getElementType().isInteger(8))
+      return emitOpError("quantized mode requires i8 weights");
+    if (!outTy.getElementType().isInteger(32))
+      return emitOpError("quantized mode requires i32 output");
+    if (getBias() && !memrefOf(getBias()).getElementType().isInteger(32))
+      return emitOpError("quantized mode bias must be i32");
+  } else {
+    return emitOpError("input element type must be a float or i8 (quantized)");
+  }
+
+  // Bias is one value per output channel.
+  if (getBias() && !sameLength(memrefOf(getBias()), O))
+    return emitOpError("bias length must match the output channels");
+  return success();
+}
 
 // -----------------------------------------------------------------------
 // snn.linear

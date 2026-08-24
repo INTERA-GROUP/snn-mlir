@@ -142,3 +142,46 @@ func.func @rescale_shape_mismatch(
       : memref<16x16x16xi32> -> memref<16x16xi32>
   return
 }
+
+// -----
+
+// snn.conv2d output height must follow (H + 2p - Kh)/s + 1.
+func.func @conv2d_bad_output_height(
+    %input:   memref<2x34x34xf32>,
+    %weights: memref<16x2x5x5xf32>,
+    %output:  memref<16x17x16xf32>
+) {
+  // expected-error @+1 {{output height (17) does not match (H+2p-Kh)/s+1 (16)}}
+  snn.conv2d ins(%input, %weights) out(%output)
+      {stride = array<i64: 2, 2>, padding = array<i64: 1, 1>}
+      : memref<2x34x34xf32>, memref<16x2x5x5xf32> -> memref<16x17x16xf32>
+  return
+}
+
+// -----
+
+// snn.conv2d weights in-channels must match the input channels.
+func.func @conv2d_channel_mismatch(
+    %input:   memref<2x16x16xf32>,
+    %weights: memref<8x3x3x3xf32>,
+    %output:  memref<8x14x14xf32>
+) {
+  // expected-error @+1 {{weights in-channels (3) must match input channels (2)}}
+  snn.conv2d ins(%input, %weights) out(%output)
+      : memref<2x16x16xf32>, memref<8x3x3x3xf32> -> memref<8x14x14xf32>
+  return
+}
+
+// -----
+
+// snn.conv2d in float mode is type-uniform across input, weights and output.
+func.func @conv2d_float_type_mismatch(
+    %input:   memref<16x16x16xf32>,
+    %weights: memref<8x16x3x3xf32>,
+    %output:  memref<8x14x14xf16>
+) {
+  // expected-error @+1 {{float mode requires input, weights, and output to share the same float element type}}
+  snn.conv2d ins(%input, %weights) out(%output)
+      : memref<16x16x16xf32>, memref<8x16x3x3xf32> -> memref<8x14x14xf16>
+  return
+}

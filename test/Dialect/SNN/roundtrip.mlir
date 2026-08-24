@@ -223,3 +223,34 @@ func.func @rescale_rank3(
       : memref<16x16x16xi32> -> memref<16x16x16xi32>
   return
 }
+
+// ── snn.conv2d ──────────────────────────────────────────────────────────────
+
+// CHECK-LABEL: func.func @conv2d_float
+// CHECK: snn.conv2d
+func.func @conv2d_float(
+    %input:   memref<2x34x34xf32>,
+    %weights: memref<16x2x5x5xf32>,
+    %output:  memref<16x16x16xf32>
+) {
+  snn.conv2d ins(%input, %weights) out(%output)
+      {stride = array<i64: 2, 2>, padding = array<i64: 1, 1>}
+      : memref<2x34x34xf32>, memref<16x2x5x5xf32> -> memref<16x16x16xf32>
+  return
+}
+
+// Bias and quantized element types round-trip too (the quantized lowering
+// arrives in a later change; parsing and verification are covered now).
+// CHECK-LABEL: func.func @conv2d_quantized_bias
+// CHECK: snn.conv2d
+func.func @conv2d_quantized_bias(
+    %input:   memref<16x16x16xi8>,
+    %weights: memref<8x16x3x3xi8>,
+    %bias:    memref<8xi32>,
+    %output:  memref<8x14x14xi32>
+) {
+  snn.conv2d ins(%input, %weights) bias(%bias : memref<8xi32>) out(%output)
+      {w_scale = 7 : i64}
+      : memref<16x16x16xi8>, memref<8x16x3x3xi8> -> memref<8x14x14xi32>
+  return
+}

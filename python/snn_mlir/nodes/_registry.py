@@ -5,6 +5,7 @@ from collections.abc import Callable
 import nir
 
 from ._base import NodeInfo
+from .conv import parse_conv2d
 from .cubali import parse_cubali
 from .cubalif import parse_cubalif
 from .li import parse_i, parse_li
@@ -18,6 +19,7 @@ from .linear import parse_affine, parse_linear
 NODE_PARSERS: dict[type, Callable[..., NodeInfo]] = {
     nir.Linear: parse_linear,
     nir.Affine: parse_affine,
+    nir.Conv2d: parse_conv2d,
     nir.CubaLIF: parse_cubalif,
     nir.CubaLI: parse_cubali,
     nir.LIF: parse_lif,
