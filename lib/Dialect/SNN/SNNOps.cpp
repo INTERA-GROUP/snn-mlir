@@ -367,8 +367,13 @@ LogicalResult snn::AvgPool2dOp::verify() {
       return emitOpError(
           "float mode requires input and output to share the same float "
           "element type");
+  } else if (inElem.isInteger(8)) {
+    // Averaging truncates but keeps the value range, so like sum pooling the
+    // quantized contract is i8 -> i8 (a truncating integer mean).
+    if (!outTy.getElementType().isInteger(8))
+      return emitOpError("quantized mode is i8 -> i8 (truncating integer mean)");
   } else {
-    return emitOpError("input element type must be a float");
+    return emitOpError("input element type must be a float or i8 (quantized)");
   }
   return success();
 }

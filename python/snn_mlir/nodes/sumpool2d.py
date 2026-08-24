@@ -56,13 +56,10 @@ class SumPool2dInfo(NodeInfo):
         is_last: bool,
         quantize: bool,
     ) -> tuple[list[str], str]:
-        if quantize:
-            raise NotImplementedError(
-                "quantized snn.sumpool2d is not implemented yet (float lane only)",
-            )
         out_var = f"%pool_{self.name}"
-        in_ty = memref_type(self.in_shape, "f32")
-        out_ty = memref_type(self.out_shape, "f32")
+        elem = "i8" if quantize else "f32"  # sum pooling is scale-preserving
+        in_ty = memref_type(self.in_shape, elem)
+        out_ty = memref_type(self.out_shape, elem)
         kh, kw = self.kernel
         sh, sw = self.stride
         ph, pw = self.padding

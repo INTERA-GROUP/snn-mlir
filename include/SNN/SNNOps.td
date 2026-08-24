@@ -218,7 +218,8 @@ def SNN_SumPool2dOp : SNN_Op<"sumpool2d"> {
 // on the quantized path, which the left-only hardware requant cannot fold into
 // sum pooling.
 //
-//   Float mode: memref<CxHxWxf32> -> memref<CxHoxWoxf32>
+//   Float mode:     memref<CxHxWxf32> -> memref<CxHoxWoxf32>
+//   Quantized mode: memref<CxHxWxi8>  -> memref<CxHoxWoxi8>  (truncating mean)
 def SNN_AvgPool2dOp : SNN_Op<"avgpool2d"> {
   let summary = "2-D average pooling layer";
   let description = [{

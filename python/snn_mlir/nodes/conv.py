@@ -83,23 +83,53 @@ class ConvInfo(SynapseInfo):
     def w_scale(self) -> int | None:
         return self._w_scale
 
+    # ── quantization ──────────────────────────────────────────────────────────
+    #
+    # Identical scheme to nodes/linear.py, over the rank-4 (O, C, Kh, Kw) weight
+    # tensor: a single power-of-2 scale, symmetric (zero-point 0), clamped to the
+    # neuron's Q-format so the synapse->neuron rescale shift stays non-negative.
+
+    def quantize(self) -> None:
+        """Compute int8 quantization in place: w_scale, quantized weights/bias."""
+        w = self.weights
+        min_w, max_w = float(np.min(w)), float(np.max(w))
+        qmin, qmax = -128, 127
+        ratio = min(
+            abs(qmax / max_w) if max_w != 0 else float("inf"),
+            abs(qmin / min_w) if min_w != 0 else float("inf"),
+        )
+        self.requantize(min(int(np.floor(np.log2(ratio))), _D_SCALE))
+
+    def requantize(self, w_scale: int) -> None:
+        """Re-quantize weights (and bias) at an externally chosen ``w_scale``.
+
+        Recomputes from the float weights, so calling it repeatedly is safe.
+        """
+        self._w_scale = w_scale
+        self._quantized_weights = np.round(self.weights * (2**w_scale)).astype(np.int8)
+        if self.bias is not None:
+            self._quantized_bias = np.round(self.bias * (2**w_scale)).astype(np.int32)
+
     # ── MLIR module-level constants ───────────────────────────────────────────
 
     def weight_globals(self, quantize: bool) -> list[str]:
         if quantize:
-            raise NotImplementedError(
-                "quantized snn.conv2d is not implemented yet (float lane only)",
-            )
-        w_ty = memref_type(self.weight_shape, "f32")
+            w_ty = memref_type(self.weight_shape, "i8")
+            w_lit = _dense_int(self.int8_weights)
+        else:
+            w_ty = memref_type(self.weight_shape, "f32")
+            w_lit = _dense_float(self.weights)
         lines = [
             f'  memref.global "private" constant @w_{self.name}'
-            f" : {w_ty} = dense<{_dense_float(self.weights)}>",
+            f" : {w_ty} = dense<{w_lit}>",
         ]
         if self.bias is not None:
-            b_ty = memref_type((self.out_channels,), "f32")
+            b_elem = "i32" if quantize else "f32"
+            b_lit = _dense_int(self.int32_bias) if quantize else _dense_float(self.bias)
+            b_ty = memref_type((self.out_channels,), b_elem)
             lines.append(
                 f'  memref.global "private" constant @b_{self.name}'
-                f" : {b_ty} = dense<{_dense_float(self.bias)}>",
+                f" : {b_ty} = dense<{b_lit}>",
             )
         return lines
 
@@ -111,36 +141,37 @@ class ConvInfo(SynapseInfo):
         is_last: bool,
         quantize: bool,
     ) -> tuple[list[str], str]:
-        if quantize:
-            raise NotImplementedError(
-                "quantized snn.conv2d is not implemented yet (float lane only)",
-            )
         out_var = f"%synapse_{self.name}"
-        in_ty = memref_type(self.in_shape, "f32")
-        w_ty = memref_type(self.weight_shape, "f32")
-        out_ty = memref_type(self.out_shape, "f32")
+        w_elem = "i8" if quantize else "f32"
+        b_elem = "i32" if quantize else "f32"
+        out_elem = "i32" if quantize else "f32"
+        in_ty = memref_type(self.in_shape, "i8" if quantize else "f32")
+        w_ty = memref_type(self.weight_shape, w_elem)
+        out_ty = memref_type(self.out_shape, out_elem)
         sh, sw = self.stride
         ph, pw = self.padding
         c, h, w = self.in_shape
         o = self.out_channels
+        kind = "int8 weights" if quantize else "f32"
         lines = [
             "",
-            f"    // --- Conv2d {self.name}: ({c},{h},{w}) -> {self.out_shape} ---",
+            f"    // --- Conv2d {self.name}: ({c},{h},{w}) -> {self.out_shape}, {kind} ---",
             f"    %w_{self.name} = memref.get_global @w_{self.name} : {w_ty}",
         ]
         bias_part = ""
         if self.bias is not None:
-            b_ty = memref_type((o,), "f32")
+            b_ty = memref_type((o,), b_elem)
             lines.append(
                 f"    %b_{self.name} = memref.get_global @b_{self.name} : {b_ty}",
             )
             bias_part = f" bias(%b_{self.name} : {b_ty})"
+        scale_attr = f", w_scale = {self._w_scale} : i64" if quantize else ""
         lines += [
             f"    {out_var} = memref.alloca() : {out_ty}",
             f"    snn.conv2d ins({input_var}, %w_{self.name}){bias_part}"
             f" out({out_var})"
             f" {{stride = array<i64: {sh}, {sw}>,"
-            f" padding = array<i64: {ph}, {pw}>}}"
+            f" padding = array<i64: {ph}, {pw}>{scale_attr}}}"
             f" : {in_ty}, {w_ty} -> {out_ty}",
         ]
         return lines, out_var
@@ -203,3 +234,10 @@ def _dense_float(arr: np.ndarray) -> str:
     if arr.ndim == 1:
         return "[" + ", ".join(f"{float(v):.8e}" for v in arr) + "]"
     return "[" + ", ".join(_dense_float(row) for row in arr) + "]"
+
+
+def _dense_int(arr: np.ndarray) -> str:
+    """Render an int numpy array as a nested MLIR ``dense`` element literal."""
+    if arr.ndim == 1:
+        return "[" + ", ".join(str(int(v)) for v in arr) + "]"
+    return "[" + ", ".join(_dense_int(row) for row in arr) + "]"

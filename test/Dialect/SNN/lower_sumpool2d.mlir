@@ -43,3 +43,19 @@ func.func @pool_pad(
       : memref<8x8x8xf32> -> memref<8x5x5xf32>
   return
 }
+
+// Quantized: sum pooling is scale-preserving, so the element contract is i8 ->
+// i8. Same named pooling op, i8 fills and window.
+// CHECK-LABEL: func.func @pool_quant
+// CHECK:         linalg.fill
+// CHECK:         linalg.pooling_nchw_sum {{.*}} ins(%{{.*}}, %{{.*}} : memref<1x8x8x8xi8>, memref<2x2xi8>) outs(%{{.*}} : memref<1x8x4x4xi8>)
+// CHECK-NOT:     snn.sumpool2d
+func.func @pool_quant(
+    %in:  memref<8x8x8xi8>,
+    %out: memref<8x4x4xi8>
+) {
+  snn.sumpool2d ins(%in) out(%out)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<8x8x8xi8> -> memref<8x4x4xi8>
+  return
+}

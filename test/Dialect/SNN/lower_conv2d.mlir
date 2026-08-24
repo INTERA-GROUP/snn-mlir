@@ -60,3 +60,25 @@ func.func @conv_bias(
       : memref<16x16x16xf32>, memref<8x16x3x3xf32> -> memref<8x14x14xf32>
   return
 }
+
+// Quantized: i8 activations and weights, i32 accumulator. Both zero-points are
+// 0 (symmetric), so linalg.conv_2d_nchw_fchw_q takes two i32 zero constants;
+// padding is zero-filled with an i8 zero. Bias is i32, added with arith.addi.
+// CHECK-LABEL: func.func @conv_quant
+// CHECK:         %[[PAD:.*]] = memref.alloca() : memref<2x36x36xi8>
+// CHECK:         linalg.fill ins({{.*}}) outs(%[[PAD]]
+// CHECK:         linalg.conv_2d_nchw_fchw_q {{.*}} ins(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} : memref<1x2x36x36xi8>, memref<16x2x5x5xi8>, i32, i32)
+// CHECK:         linalg.generic
+// CHECK:         arith.addi
+// CHECK-NOT:     snn.conv2d
+func.func @conv_quant(
+    %in:  memref<2x34x34xi8>,
+    %w:   memref<16x2x5x5xi8>,
+    %b:   memref<16xi32>,
+    %out: memref<16x16x16xi32>
+) {
+  snn.conv2d ins(%in, %w) bias(%b : memref<16xi32>) out(%out)
+      {stride = array<i64: 2, 2>, padding = array<i64: 1, 1>, w_scale = 7 : i64}
+      : memref<2x34x34xi8>, memref<16x2x5x5xi8> -> memref<16x16x16xi32>
+  return
+}

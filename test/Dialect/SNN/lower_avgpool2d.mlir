@@ -45,3 +45,19 @@ func.func @avgpool_pad(
       : memref<8x8x8xf32> -> memref<8x5x5xf32>
   return
 }
+
+// Quantized: a truncating integer mean, i8 -> i8. The sum-pool lowering followed
+// by an in-place arith.divsi of each window sum by its count (kh*kw).
+// CHECK-LABEL: func.func @avgpool_quant
+// CHECK:         linalg.pooling_nchw_sum {{.*}} : memref<1x8x8x8xi8>, memref<2x2xi8>) outs(%{{.*}} : memref<1x8x4x4xi8>)
+// CHECK:         arith.divsi
+// CHECK-NOT:     snn.avgpool2d
+func.func @avgpool_quant(
+    %in:  memref<8x8x8xi8>,
+    %out: memref<8x4x4xi8>
+) {
+  snn.avgpool2d ins(%in) out(%out)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<8x8x8xi8> -> memref<8x4x4xi8>
+  return
+}

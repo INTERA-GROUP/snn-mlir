@@ -122,10 +122,32 @@ def test_no_bias_emits_no_bias_operand():
     assert "bias(" not in "\n".join(lines)
 
 
-def test_quantized_path_is_not_implemented_yet():
-    info = parse_conv2d(_conv_node(), "c0")
-    with pytest.raises(NotImplementedError):
-        info.emit_mlir("%input", is_last=False, quantize=True)
+def test_quantize_sets_int8_weights_and_w_scale():
+    info = parse_conv2d(_conv_node(C=2, OC=4, K=3), "c0")
+    info.quantize()
+    assert isinstance(info.w_scale, int)
+    assert info.w_scale <= 12  # clamped to the neuron Q-format
+    assert info.int8_weights.dtype == np.int8
+    assert info.int8_weights.shape == (4, 2, 3, 3)
+    assert info.int32_bias.dtype == np.int32
+
+
+def test_weight_globals_quantized_are_i8_and_i32():
+    info = parse_conv2d(_conv_node(C=2, OC=4, K=3), "c0")
+    info.quantize()
+    globs = "\n".join(info.weight_globals(quantize=True))
+    assert "@w_c0 : memref<4x2x3x3xi8>" in globs
+    assert "@b_c0 : memref<4xi32>" in globs
+
+
+def test_emits_quantized_snn_conv2d_with_w_scale():
+    info = parse_conv2d(_conv_node(C=2, OC=4, K=3, H=6, W=6, stride=2, padding=1), "c0")
+    info.quantize()
+    lines, _ = info.emit_mlir("%input", is_last=False, quantize=True)
+    text = "\n".join(lines)
+    assert f"w_scale = {info.w_scale} : i64" in text
+    assert "memref<2x6x6xi8>, memref<4x2x3x3xi8> -> memref<4x3x3xi32>" in text
+    assert "bias(%b_c0 : memref<4xi32>)" in text
 
 
 # ── the N-D C ABI: a conv entry makes the whole kernel signature rank-3 ────────
@@ -168,6 +190,24 @@ def test_emitted_kernel_carries_rank3_state_and_io():
     assert "%input : memref<2x6x6xf32>" in mlir
     assert "%voltage_if : memref<4x6x6xf32>" in mlir  # state is a feature map, not flat
     assert "%output : memref<4x6x6xf32>" in mlir
+
+
+def test_quantized_conv_edge_gets_a_rank3_rescale():
+    # A conv->neuron edge is a synapse->neuron edge, so the generic rescale
+    # insertion splices a RescaleInfo in — with the feature-map shape, the conv's
+    # w_scale and the neuron's d_scale.
+    from snn_mlir import parse_graph
+    from snn_mlir._graph import insert_rescale_nodes, quantize_layers
+    from snn_mlir.nodes import RescaleInfo
+
+    graph = parse_graph(_conv_if_graph())
+    quantize_layers(graph)
+    graph = insert_rescale_nodes(graph)
+    rescale = next(n for n in graph if isinstance(n, RescaleInfo))
+    conv = next(n for n in graph if isinstance(n, ConvInfo))
+    assert rescale.out_shape == (4, 6, 6)  # rank-3, not flattened
+    assert rescale.w_scale == conv.w_scale
+    assert rescale.d_scale == 12
 
 
 def test_main_c_descriptors_are_rank3(tmp_path):

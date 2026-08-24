@@ -29,6 +29,15 @@ static bool isFloatMemRef(Value v) {
 }
 
 //===----------------------------------------------------------------------===//
+//  Helper: a typed zero constant (float or integer element type)
+//===----------------------------------------------------------------------===//
+static Value zeroOf(OpBuilder &b, Location loc, Type elem) {
+  if (isa<FloatType>(elem))
+    return arith::ConstantOp::create(b, loc, elem, b.getFloatAttr(elem, 0.0));
+  return arith::ConstantOp::create(b, loc, elem, b.getIntegerAttr(elem, 0));
+}
+
+//===----------------------------------------------------------------------===//
 //  Helpers: the iteration space of a shape-preserving elementwise op
 //
 //  The neuron ops and snn.rescale read and write one element per element, so
@@ -187,13 +196,11 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
     Value weights = op.getWeights();
     Value output = op.getOutput();
 
-    if (!isFloatMemRef(input))
-      return rewriter.notifyMatchFailure(
-          op, "only the float conv2d lowering is implemented");
-
     auto inTy = cast<MemRefType>(input.getType());
     auto outTy = cast<MemRefType>(output.getType());
-    Type elemTy = inTy.getElementType();
+    Type inElem = inTy.getElementType();   // f32 or i8
+    Type outElem = outTy.getElementType(); // f32 or i32
+    bool quant = !isFloatMemRef(input);
     int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
 
     ArrayRef<int64_t> stride = op.getStride();
@@ -201,14 +208,13 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
     int64_t ph = padding[0], pw = padding[1];
 
     // ── materialize padding (valid-conv only), else convolve the input ────────
+    // Padding with 0 is correct in both modes: 0 is the symmetric zero-point.
     Value convInput = input;
     if (ph != 0 || pw != 0) {
       int64_t Hp = H + 2 * ph, Wp = W + 2 * pw;
-      auto padTy = MemRefType::get({C, Hp, Wp}, elemTy);
+      auto padTy = MemRefType::get({C, Hp, Wp}, inElem);
       Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
-      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                              rewriter.getFloatAttr(elemTy, 0.0));
-      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, inElem), padded);
       // Copy the real input into the [0:C, ph:ph+H, pw:pw+W] interior.
       Value interior = memref::SubViewOp::create(
           rewriter, loc, padded,
@@ -226,27 +232,36 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
       auto t = cast<MemRefType>(v.getType());
       return MemRefType::get({1, t.getDimSize(0), t.getDimSize(1),
                               t.getDimSize(2)},
-                             elemTy);
+                             t.getElementType());
     };
     Value in4d = memref::ExpandShapeOp::create(rewriter, loc, conv4dTy(convInput),
                                                convInput, reassoc);
     Value out4d = memref::ExpandShapeOp::create(rewriter, loc, conv4dTy(output),
                                                 output, reassoc);
 
-    // conv_2d_nchw_fchw accumulates into its output, so zero it first.
-    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                            rewriter.getFloatAttr(elemTy, 0.0));
-    linalg::FillOp::create(rewriter, loc, fzero, out4d);
+    // The named conv accumulates into its output, so zero it first.
+    linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, outElem), out4d);
 
     auto i64Vec = [&](ArrayRef<int64_t> v) {
       return rewriter.getI64TensorAttr(v);
     };
-    linalg::Conv2DNchwFchwOp::create(
-        rewriter, loc, TypeRange{}, ValueRange{in4d, weights},
-        ValueRange{out4d},
-        /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
+    if (quant) {
+      // Symmetric quantization: both zero-points are 0.
+      Value izp = zeroOf(rewriter, loc, rewriter.getI32Type());
+      Value kzp = zeroOf(rewriter, loc, rewriter.getI32Type());
+      linalg::Conv2DNchwFchwQOp::create(
+          rewriter, loc, TypeRange{}, ValueRange{in4d, weights, izp, kzp},
+          ValueRange{out4d},
+          /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
+    } else {
+      linalg::Conv2DNchwFchwOp::create(
+          rewriter, loc, TypeRange{}, ValueRange{in4d, weights},
+          ValueRange{out4d},
+          /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
+    }
 
     // ── optional per-output-channel bias, broadcast over H×W ──────────────────
+    // Quantized bias is i32 (same scale as the MAC accumulator).
     Value bias = op.getBias();
     if (bias) {
       MLIRContext *ctx = rewriter.getContext();
@@ -260,7 +275,8 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
           biasMaps, biasIter,
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value bval = args[0], acc = args[1];
-            Value sum = arith::AddFOp::create(b, loc, acc, bval);
+            Value sum = quant ? arith::AddIOp::create(b, loc, acc, bval).getResult()
+                              : arith::AddFOp::create(b, loc, acc, bval).getResult();
             linalg::YieldOp::create(b, loc, sum);
           });
     }
@@ -386,12 +402,8 @@ struct LowerSumPool2d : public OpRewritePattern<snn::SumPool2dOp> {
     Value input = op.getInput();
     Value output = op.getOutput();
 
-    if (!isFloatMemRef(input))
-      return rewriter.notifyMatchFailure(
-          op, "only the float sumpool2d lowering is implemented");
-
     auto inTy = cast<MemRefType>(input.getType());
-    Type elemTy = inTy.getElementType();
+    Type elemTy = inTy.getElementType(); // f32 or i8 (scale-preserving: i8 -> i8)
     int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
 
     ArrayRef<int64_t> kernel = op.getKernel();
@@ -405,9 +417,7 @@ struct LowerSumPool2d : public OpRewritePattern<snn::SumPool2dOp> {
       int64_t Hp = H + 2 * ph, Wp = W + 2 * pw;
       auto padTy = MemRefType::get({C, Hp, Wp}, elemTy);
       Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
-      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                              rewriter.getFloatAttr(elemTy, 0.0));
-      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, elemTy), padded);
       Value interior = memref::SubViewOp::create(
           rewriter, loc, padded,
           /*offsets=*/ArrayRef<int64_t>{0, ph, pw},
@@ -432,9 +442,7 @@ struct LowerSumPool2d : public OpRewritePattern<snn::SumPool2dOp> {
                                                 output, reassoc);
 
     // pooling_nchw_sum accumulates into its output, so zero it first.
-    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                            rewriter.getFloatAttr(elemTy, 0.0));
-    linalg::FillOp::create(rewriter, loc, fzero, out4d);
+    linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, elemTy), out4d);
 
     // The window operand: only its shape [Kh, Kw] matters to the named op.
     auto winTy = MemRefType::get({kernel[0], kernel[1]}, elemTy);
@@ -468,12 +476,9 @@ struct LowerAvgPool2d : public OpRewritePattern<snn::AvgPool2dOp> {
     Value input = op.getInput();
     Value output = op.getOutput();
 
-    if (!isFloatMemRef(input))
-      return rewriter.notifyMatchFailure(
-          op, "only the float avgpool2d lowering is implemented");
-
     auto inTy = cast<MemRefType>(input.getType());
-    Type elemTy = inTy.getElementType();
+    Type elemTy = inTy.getElementType(); // f32 or i8 (truncating integer mean)
+    bool quant = !isFloatMemRef(input);
     int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
 
     ArrayRef<int64_t> kernel = op.getKernel();
@@ -487,9 +492,7 @@ struct LowerAvgPool2d : public OpRewritePattern<snn::AvgPool2dOp> {
       int64_t Hp = H + 2 * ph, Wp = W + 2 * pw;
       auto padTy = MemRefType::get({C, Hp, Wp}, elemTy);
       Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
-      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                              rewriter.getFloatAttr(elemTy, 0.0));
-      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, elemTy), padded);
       Value interior = memref::SubViewOp::create(
           rewriter, loc, padded,
           /*offsets=*/ArrayRef<int64_t>{0, ph, pw},
@@ -513,9 +516,7 @@ struct LowerAvgPool2d : public OpRewritePattern<snn::AvgPool2dOp> {
                                                 output, reassoc);
 
     // pooling_nchw_sum accumulates into its output, so zero it first.
-    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                            rewriter.getFloatAttr(elemTy, 0.0));
-    linalg::FillOp::create(rewriter, loc, fzero, out4d);
+    linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, elemTy), out4d);
 
     auto winTy = MemRefType::get({kernel[0], kernel[1]}, elemTy);
     Value window = memref::AllocaOp::create(rewriter, loc, winTy);
@@ -529,16 +530,22 @@ struct LowerAvgPool2d : public OpRewritePattern<snn::AvgPool2dOp> {
         /*strides=*/i64Vec(stride), /*dilations=*/i64Vec({1, 1}));
 
     // ── divide each summed window by its count → the mean ─────────────────────
-    Value divisor = arith::ConstantOp::create(
-        rewriter, loc, elemTy,
-        rewriter.getFloatAttr(elemTy, double(kernel[0] * kernel[1])));
+    // Float: exact division; quantized: truncating signed integer division
+    // (count-include-pad, so the divisor is the full window area).
+    int64_t count = kernel[0] * kernel[1];
+    Value divisor = quant
+        ? arith::ConstantOp::create(rewriter, loc, elemTy,
+                                    rewriter.getIntegerAttr(elemTy, count))
+        : arith::ConstantOp::create(rewriter, loc, elemTy,
+                                    rewriter.getFloatAttr(elemTy, double(count)));
     SmallVector<AffineMap> divMaps = {rewriter.getMultiDimIdentityMap(3)};
     SmallVector<utils::IteratorType> divIter(3, utils::IteratorType::parallel);
     linalg::GenericOp::create(
         rewriter, loc, TypeRange{}, ValueRange{}, ValueRange{output},
         divMaps, divIter,
         [&](OpBuilder &b, Location loc, ValueRange args) {
-          Value q = arith::DivFOp::create(b, loc, args[0], divisor);
+          Value q = quant ? arith::DivSIOp::create(b, loc, args[0], divisor).getResult()
+                          : arith::DivFOp::create(b, loc, args[0], divisor).getResult();
           linalg::YieldOp::create(b, loc, q);
         });
 

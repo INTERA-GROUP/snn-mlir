@@ -295,14 +295,14 @@ func.func @avgpool2d_channel_mismatch(
 }
 
 // -----
-// snn.avgpool2d is float-only for now; integer operands are rejected.
-func.func @avgpool2d_not_float(
+// snn.avgpool2d quantized contract is i8 -> i8 (a truncating integer mean).
+func.func @avgpool2d_bad_quant_output(
     %input:  memref<16x16x16xi8>,
-    %output: memref<16x8x8xi8>
+    %output: memref<16x8x8xi32>
 ) {
-  // expected-error @+1 {{input element type must be a float}}
+  // expected-error @+1 {{quantized mode is i8 -> i8 (truncating integer mean)}}
   snn.avgpool2d ins(%input) out(%output)
       {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
-      : memref<16x16x16xi8> -> memref<16x8x8xi8>
+      : memref<16x16x16xi8> -> memref<16x8x8xi32>
   return
 }

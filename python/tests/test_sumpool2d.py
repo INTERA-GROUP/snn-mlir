@@ -99,7 +99,9 @@ def test_carries_no_weight_globals():
     assert info.weight_globals(quantize=False) == []
 
 
-def test_quantized_path_is_not_implemented_yet():
-    info = parse_sumpool2d(_pool_node(), "p0")
-    with pytest.raises(NotImplementedError):
-        info.emit_mlir("%input", is_last=False, quantize=True)
+def test_quantized_emission_is_i8_scale_preserving():
+    info = parse_sumpool2d(_pool_node(C=16, H=16, W=16, kernel=2, stride=2), "p0")
+    lines, _ = info.emit_mlir("%input", is_last=False, quantize=True)
+    text = "\n".join(lines)
+    assert "snn.sumpool2d" in text
+    assert "memref<16x16x16xi8> -> memref<16x8x8xi8>" in text
