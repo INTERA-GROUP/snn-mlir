@@ -267,3 +267,42 @@ func.func @sumpool2d_type_mismatch(
       : memref<16x16x16xf32> -> memref<16x8x8xf16>
   return
 }
+
+// -----
+// snn.avgpool2d output height must follow (H + 2p - Kh)/s + 1.
+func.func @avgpool2d_bad_output_height(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<16x9x8xf32>
+) {
+  // expected-error @+1 {{output height (9) does not match (H+2p-Kh)/s+1 (8)}}
+  snn.avgpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<16x9x8xf32>
+  return
+}
+
+// -----
+// snn.avgpool2d preserves the channel count.
+func.func @avgpool2d_channel_mismatch(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<8x8x8xf32>
+) {
+  // expected-error @+1 {{pooling preserves channels: input (16) and output (8) channel counts must match}}
+  snn.avgpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<8x8x8xf32>
+  return
+}
+
+// -----
+// snn.avgpool2d is float-only for now; integer operands are rejected.
+func.func @avgpool2d_not_float(
+    %input:  memref<16x16x16xi8>,
+    %output: memref<16x8x8xi8>
+) {
+  // expected-error @+1 {{input element type must be a float}}
+  snn.avgpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xi8> -> memref<16x8x8xi8>
+  return
+}

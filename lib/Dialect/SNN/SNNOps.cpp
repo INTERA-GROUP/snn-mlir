@@ -318,6 +318,62 @@ LogicalResult snn::SumPool2dOp::verify() {
 }
 
 // -----------------------------------------------------------------------
+// snn.avgpool2d
+// -----------------------------------------------------------------------
+//
+// Same shape contract as snn.sumpool2d (channel-preserving, rank-3, spatial
+// dims follow the pooling formula). Averaging divides by the window count, so
+// unlike sum pooling it is not scale-preserving; the quantized element contract
+// is deferred to the quantized lowering, and only float is verified here.
+LogicalResult snn::AvgPool2dOp::verify() {
+  auto inTy = memrefOf(getInput());
+  auto outTy = memrefOf(getOutput());
+
+  if (inTy.getRank() != 3 || outTy.getRank() != 3)
+    return emitOpError("expects rank-3 input/output [C,H,W]");
+
+  ArrayRef<int64_t> kernel = getKernel();
+  ArrayRef<int64_t> stride = getStride();
+  ArrayRef<int64_t> padding = getPadding();
+  if (kernel.size() != 2 || stride.size() != 2 || padding.size() != 2)
+    return emitOpError("kernel, stride and padding must each have 2 elements");
+
+  int64_t C = inTy.getDimSize(0), H = inTy.getDimSize(1), W = inTy.getDimSize(2);
+  int64_t Co = outTy.getDimSize(0);
+
+  auto known = [](int64_t d) { return !ShapedType::isDynamic(d); };
+
+  if (known(C) && known(Co) && C != Co)
+    return emitOpError("pooling preserves channels: input (")
+           << C << ") and output (" << Co << ") channel counts must match";
+  if (known(H) && known(outTy.getDimSize(1))) {
+    int64_t expected = convOutDim(H, kernel[0], stride[0], padding[0]);
+    if (outTy.getDimSize(1) != expected)
+      return emitOpError("output height (")
+             << outTy.getDimSize(1) << ") does not match (H+2p-Kh)/s+1 ("
+             << expected << ")";
+  }
+  if (known(W) && known(outTy.getDimSize(2))) {
+    int64_t expected = convOutDim(W, kernel[1], stride[1], padding[1]);
+    if (outTy.getDimSize(2) != expected)
+      return emitOpError("output width (")
+             << outTy.getDimSize(2) << ") does not match (W+2p-Kw)/s+1 ("
+             << expected << ")";
+  }
+
+  Type inElem = inTy.getElementType();
+  if (isa<FloatType>(inElem)) {
+    if (outTy.getElementType() != inElem)
+      return emitOpError(
+          "float mode requires input and output to share the same float "
+          "element type");
+  } else {
+    return emitOpError("input element type must be a float");
+  }
+  return success();
+}
+
+// -----------------------------------------------------------------------
 // snn.linear
 // -----------------------------------------------------------------------
 LogicalResult snn::LinearOp::verify() {

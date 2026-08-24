@@ -3,6 +3,7 @@
 from ._base import NeuronInfo, NodeInfo, SynapseInfo
 from ._registry import NODE_PARSERS
 from ._rescale import RescaleInfo
+from .avgpool2d import AvgPool2dInfo, parse_avgpool2d
 from .conv import ConvInfo, parse_conv2d
 from .conv1d import Conv1dInfo, parse_conv1d
 from .cubali import CubaLIInfo, parse_cubali
@@ -15,6 +16,7 @@ from .sumpool2d import SumPool2dInfo, parse_sumpool2d
 
 __all__ = [
     "NODE_PARSERS",
+    "AvgPool2dInfo",
     "Conv1dInfo",
     "ConvInfo",
     "CubaLIFInfo",
@@ -29,6 +31,7 @@ __all__ = [
     "SumPool2dInfo",
     "SynapseInfo",
     "parse_affine",
+    "parse_avgpool2d",
     "parse_conv1d",
     "parse_conv2d",
     "parse_cubali",

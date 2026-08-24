@@ -313,3 +313,17 @@ func.func @sumpool2d_quantized(
       : memref<8x8x8xi8> -> memref<8x4x4xi8>
   return
 }
+
+// ── snn.avgpool2d ─────────────────────────────────────────────────────────────
+
+// CHECK-LABEL: func.func @avgpool2d_float
+// CHECK: snn.avgpool2d
+func.func @avgpool2d_float(
+    %input:  memref<16x16x16xf32>,
+    %output: memref<16x8x8xf32>
+) {
+  snn.avgpool2d ins(%input) out(%output)
+      {kernel = array<i64: 2, 2>, stride = array<i64: 2, 2>}
+      : memref<16x16x16xf32> -> memref<16x8x8xf32>
+  return
+}

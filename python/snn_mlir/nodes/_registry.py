@@ -5,6 +5,7 @@ from collections.abc import Callable
 import nir
 
 from ._base import NodeInfo
+from .avgpool2d import parse_avgpool2d
 from .conv import parse_conv2d
 from .conv1d import parse_conv1d
 from .cubali import parse_cubali
@@ -25,6 +26,7 @@ NODE_PARSERS: dict[type, Callable[..., NodeInfo]] = {
     nir.Conv2d: parse_conv2d,
     nir.Conv1d: parse_conv1d,
     nir.SumPool2d: parse_sumpool2d,
+    nir.AvgPool2d: parse_avgpool2d,
     nir.Flatten: parse_flatten,
     nir.CubaLIF: parse_cubalif,
     nir.CubaLI: parse_cubali,

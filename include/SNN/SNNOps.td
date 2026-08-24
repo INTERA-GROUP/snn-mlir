@@ -209,6 +209,49 @@ def SNN_SumPool2dOp : SNN_Op<"sumpool2d"> {
 }
 
 //===----------------------------------------------------------------------===//
+// snn.avgpool2d
+//===----------------------------------------------------------------------===//
+//
+// 2-D average pooling: rank-3 [C, H, W], channel-preserving, no weights. Like
+// snn.sumpool2d but divides each window by its full count (kh*kw, counting
+// padding). A separate op because averaging needs that divide — a right shift
+// on the quantized path, which the left-only hardware requant cannot fold into
+// sum pooling.
+//
+//   Float mode: memref<CxHxWxf32> -> memref<CxHoxWoxf32>
+def SNN_AvgPool2dOp : SNN_Op<"avgpool2d"> {
+  let summary = "2-D average pooling layer";
+  let description = [{
+    Computes 2-D average pooling: each output element is the mean of the input
+    elements in its window, per channel. Activations are rank-3 [C, H, W]; the
+    channel count is preserved. The mean divides by the full window count
+    (kernel[0]*kernel[1]), counting padding.
+
+    Output spatial size follows the standard formula:
+      Ho = (H + 2*padding[0] - kernel[0]) / stride[0] + 1
+      Wo = (W + 2*padding[1] - kernel[1]) / stride[1] + 1
+  }];
+
+  let arguments = (ins
+    Arg<AnyMemRef, "input feature map", [MemRead]>:$input,
+    Arg<AnyMemRef, "output feature map", [MemWrite]>:$output,
+    DenseI64ArrayAttr:$kernel,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{1, 1}">:$stride,
+    DefaultValuedAttr<DenseI64ArrayAttr, "{0, 0}">:$padding,
+    DefaultValuedAttr<I64Attr, "0">:$w_scale
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    `ins` `(` $input `)` `out` `(` $output `)`
+    attr-dict `:` type($input) `->` type($output)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // snn.rescale
 //===----------------------------------------------------------------------===//
 //
