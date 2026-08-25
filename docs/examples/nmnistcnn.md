@@ -54,8 +54,3 @@ uv run snn-mlir run examples/nmnistcnn/1.0.0 --quantize   # int8 weights, Q12 st
 The 100 frames of `input.npy` set `N_STEPS`; output lands in
 `examples/nmnistcnn/1.0.0/build/results.csv`, 10 columns wide. Without the toolchain,
 `snn-mlir codegen examples/nmnistcnn/1.0.0` stops after generating the sources.
-
-!!! warning "1-D convolution is float-only"
-    `Conv2d` and both pooling ops run in float **and** quantized mode, as this model does. A
-    model built on `nir.Conv1d`, by contrast, currently has no quantized lowering — `-q` on such a
-    model is rejected. See [Limitations](../limitations.md).

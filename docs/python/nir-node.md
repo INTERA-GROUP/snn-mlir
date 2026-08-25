@@ -8,8 +8,7 @@ connectivity primitives, or any node your framework emits. We **actively want** 
 contributions, and the design keeps them small and self-contained.
 
 The most valuable additions right now are the still-unmapped NIR primitives — `nir.Delay`,
-`nir.Scale`, `nir.Threshold` — a **quantized `nir.Conv1d`** path (only the float lane exists
-today), and any neuron variant your hardware needs. If you're unsure where to start,
+`nir.Scale`, `nir.Threshold` — and any neuron variant your hardware needs. If you're unsure where to start,
 [get in touch](../contributing.md) and we'll point you at the right node.
 
 ## How it's structured

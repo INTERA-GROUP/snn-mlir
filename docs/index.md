@@ -44,7 +44,7 @@ support status. See [NIR mapping](python/nir-mapping.md) for the details of each
 | `Linear` | ✅ | `snn.linear` | No bias |
 | `Affine` | ✅ | `snn.linear` | Bias as second operand |
 | `Conv2d` | ✅ | `snn.conv2d` | Float + quantized |
-| `Conv1d` | ✅ | `snn.conv1d` | **Float only** (no quantized 1-D conv yet) |
+| `Conv1d` | ✅ | `snn.conv1d` | Float + quantized |
 | `SumPool2d` | ✅ | `snn.sumpool2d` | Float + quantized |
 | `AvgPool2d` | ✅ | `snn.avgpool2d` | Float + quantized |
 | `Flatten` | ✅ | — | Structural reshape |

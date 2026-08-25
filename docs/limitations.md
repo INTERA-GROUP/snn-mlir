@@ -27,11 +27,10 @@ We group them by which half of the project they live in.
     allocates the recurrent state buffers itself, so recurrent models compile and run on the
     host like feedforward ones.
 
-!!! warning "Convolution is float-only for 1-D; a few NIR nodes remain unmapped"
-    `nir.Conv2d`, `nir.SumPool2d`, and `nir.AvgPool2d` are supported in both float and quantized
-    modes; `nir.Conv1d` is supported in **float only** — there is no quantized 1-D convolution op
-    yet, so a `-q` run on a `Conv1d` model is rejected. The still-unmapped NIR primitives are
-    `nir.Delay`, `nir.Scale`, and `nir.Threshold`. Adding one is a contained task — see
+!!! warning "A few NIR nodes remain unmapped"
+    `nir.Conv2d`, `nir.Conv1d`, `nir.SumPool2d`, and `nir.AvgPool2d` are all supported in both
+    float and quantized modes. The still-unmapped NIR primitives are `nir.Delay`, `nir.Scale`,
+    and `nir.Threshold`. Adding one is a contained task — see
     [Adding a NIR node type](python/nir-node.md).
 
 !!! warning "Uniform neuron parameters per layer"

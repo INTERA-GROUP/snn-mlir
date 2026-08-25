@@ -27,7 +27,7 @@ and to custom hardware tomorrow, reusing the rest of the MLIR ecosystem.
 |---|---|---|---|
 | `snn.linear` | — | `f32`/`i32` | Matrix-vector synapse layer (`weights @ input → output`) |
 | `snn.conv2d` | — | `f32`/`i32` | 2-D convolutional synapse over `[channels, height, width]` maps |
-| `snn.conv1d` | — | `f32` | 1-D convolutional synapse (float only — no quantized 1-D conv yet) |
+| `snn.conv1d` | — | `f32`/`i32` | 1-D convolutional synapse over `[channels, length]` maps |
 | `snn.sumpool2d` | — | `f32`/`i32` | 2-D sum pooling |
 | `snn.avgpool2d` | — | `f32`/`i32` | 2-D average pooling |
 | `snn.rescale` | — | `i32` | Per-edge requantization shift to align quantization scales |

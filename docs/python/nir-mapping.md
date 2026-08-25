@@ -87,7 +87,7 @@ Each SNN op covers a family of NIR nodes:
 | `nir.Linear` | `snn.linear` | No bias |
 | `nir.Affine` | `snn.linear` | Bias added as second operand |
 | `nir.Conv2d` | `snn.conv2d` | 2-D convolutional synapse; float + quantized |
-| `nir.Conv1d` | `snn.conv1d` | 1-D convolutional synapse; **float only** (no quantized 1-D conv op yet) |
+| `nir.Conv1d` | `snn.conv1d` | 1-D convolutional synapse; float + quantized |
 | `nir.SumPool2d` | `snn.sumpool2d` | Sum pooling; float + quantized |
 | `nir.AvgPool2d` | `snn.avgpool2d` | Average pooling; float + quantized |
 | `nir.Flatten` | _(reshape)_ | Structural — flattens a feature map to a vector; no dedicated op |
@@ -166,9 +166,10 @@ self-recurrence (see [Recurrence](#recurrence)). The NIR primitives **not yet ma
 - `nir.Scale` — a scalar gain node
 - `nir.Threshold` — a standalone threshold node
 
-`nir.Conv1d` is mapped for **float only** — there is no quantized 1-D convolution op yet, so a
-`-q` run on a `Conv1d` model is rejected. Branching and residual topologies are also still
-unsupported (only linear chains and the one recurrent cycle above).
+Both convolutions map in float **and** quantized mode. LLVM ships no quantized rank-3 named
+conv, so `nir.Conv1d` is lowered by embedding it in a 2-D convolution with a unit width axis and
+reusing `linalg.conv_2d_nchw_fchw_q` — exact, since the extra axis is size 1. Branching and
+residual topologies remain unsupported (only linear chains and the one recurrent cycle above).
 
 Adding a node is a contained task — see [Adding a NIR node type](nir-node.md). If the model you
 care about uses an unsupported node, we'd be glad to help; [send us the NIR graph](../contributing.md).
