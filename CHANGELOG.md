@@ -1,4 +1,26 @@
 # Changelog
+## v1.0.0 (2026-08-25)
+
+### Feat
+
+- **nodes**: add conv1d quantized option. Leveraging conv2d
+- **examples**: add brailernn and nmnistcnn example files
+- **frontend**: add support for .npy input files, not only .csv
+- **compiler**: enable quantization to conv and pool nodes. Missing conv1d
+- **avgpool2d**: support for avgpool2d NIR node
+- **sumpool2d**: add support for sumpool2d NIR node
+- **conv1d**: add conv1d lowering support and tests
+- **conv2d**: add conv2d as float inference and N-D ABI support for codegen
+- **nodes**: derive memref types from shape instead of flat size. Update 1-D to any rank
+- **nodes**: Prepare nodes for supporting multidimensional neural networks. Size -> shape [tuple]
+
+### Refactor
+
+- **types**: base now declares parameters non-Optional. Make mypy happy
+- **ruff**: make ruff happy and improve code comments
+- **nodes**: add intermediate classes to NodeInfo. SynapseInfo and NeuronInfo
+- **lif**: change threshold parameter to match other neurons
+
 ## v0.6.1 (2026-08-14)
 
 ### Fix
