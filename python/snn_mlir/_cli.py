@@ -146,9 +146,9 @@ def build_parser() -> argparse.ArgumentParser:
         "codegen",
         help="generate build/ C sources + MLIR from a model folder (no toolchain)",
         description="Generate a build/ folder (network.mlir, snn_data.h, main.c, "
-        "input.h) from a folder holding one .nir and an input.csv.",
+        "input.h) from a folder holding one .nir and an input.csv or input.npy.",
     )
-    p_codegen.add_argument("folder", help="model folder (one .nir + input.csv)")
+    p_codegen.add_argument("folder", help="model folder (one .nir + input.csv/.npy)")
     _add_quantize(p_codegen)
     p_codegen.set_defaults(func=_cmd_codegen)
 
@@ -158,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Compile the CPU reference for a model folder and run it, writing "
         "results.csv. Requires the snn-opt toolchain.",
     )
-    p_run.add_argument("folder", help="model folder (one .nir + input.csv)")
+    p_run.add_argument("folder", help="model folder (one .nir + input.csv/.npy)")
     p_run.add_argument(
         "--platform",
         default="linux",

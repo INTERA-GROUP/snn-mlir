@@ -90,10 +90,27 @@ def test_codegen_quantize(model_folder):
     assert "mk1d_i8" in (model_folder / "build" / "main.c").read_text()
 
 
-def test_codegen_missing_input_csv(tmp_path, nir_linear_cubalif, capsys):
+def test_codegen_missing_input(tmp_path, nir_linear_cubalif, capsys):
     nir.write(tmp_path / "network.nir", nir_linear_cubalif)
     assert main(["codegen", str(tmp_path)]) == 1
-    assert "input.csv not found" in capsys.readouterr().err
+    assert "no input.csv or input.npy found" in capsys.readouterr().err
+
+
+def test_codegen_from_npy(tmp_path, nir_linear_cubalif):
+    """A .npy input bakes the same input.h a matching .csv would."""
+    nir.write(tmp_path / "network.nir", nir_linear_cubalif)
+    frames = np.random.default_rng(0).integers(0, 2, (3, 8))
+    np.save(tmp_path / "input.npy", frames)
+    assert main(["codegen", str(tmp_path)]) == 0
+    assert "int8_t L0_input[3][8]" in (tmp_path / "build" / "input.h").read_text()
+
+
+def test_codegen_both_inputs_error(tmp_path, nir_linear_cubalif, capsys):
+    nir.write(tmp_path / "network.nir", nir_linear_cubalif)
+    np.savetxt(tmp_path / "input.csv", np.zeros((2, 8), dtype=int), fmt="%d", delimiter=",")
+    np.save(tmp_path / "input.npy", np.zeros((2, 8), dtype=int))
+    assert main(["codegen", str(tmp_path)]) == 1
+    assert "both input.csv and input.npy" in capsys.readouterr().err
 
 
 def test_codegen_no_nir(tmp_path, capsys):

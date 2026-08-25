@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 """C runtime code generation for a NIR graph.
 
-Turns a model folder (exactly one ``*.nir`` + an ``input.csv``) into a ``build/``
-directory holding everything a compiler needs for the CPU reference:
+Turns a model folder (exactly one ``*.nir`` + an ``input.csv`` or ``input.npy``)
+into a ``build/`` directory holding everything a compiler needs for the CPU
+reference:
 
     network.mlir   SNN-dialect MLIR (weights baked in as constant globals)
     snn_data.h     layer-size macros
-    input.h        the input sequence, baked from input.csv (int8 L0_input)
+    input.h        the input sequence, baked from the input file (int8 L0_input)
     main.c         timestep-loop driver that prints one CSV row per step
 
 ``codegen_folder`` is the folder-level entry point the CLI drives; ``run`` (the
@@ -33,9 +34,9 @@ def codegen_folder(
 ) -> Path:
     """Emit ``<folder>/build/`` from a model folder.
 
-    The folder must hold exactly one ``*.nir`` and an ``input.csv``. ``n_steps``
-    is taken from the number of rows in ``input.csv``; its column count must
-    match the network's input size.
+    The folder must hold exactly one ``*.nir`` and one input file — ``input.csv``
+    or ``input.npy``. ``n_steps`` is taken from the number of rows/frames in the
+    input; its per-frame feature count must match the network's input size.
 
     Returns the path to the generated ``build/`` directory.
     """
@@ -44,9 +45,7 @@ def codegen_folder(
         raise FileNotFoundError(f"folder not found: {folder}")
 
     nir_path = _find_single_nir(folder)
-    csv_path = folder / "input.csv"
-    if not csv_path.is_file():
-        raise FileNotFoundError(f"input.csv not found in {folder}")
+    input_path = _find_single_input(folder)
 
     layers = parse_graph(nir_path)
     ensure_unique_c_names(layers)
@@ -61,7 +60,7 @@ def codegen_folder(
     build = folder / "build"
     build.mkdir(parents=True, exist_ok=True)
 
-    n_steps = write_input_header(csv_path, build, expected_cols=input_size)
+    n_steps = write_input_header(input_path, build, expected_cols=input_size)
     export_mlir(nir_path, build / "network.mlir", quantize=quantize)
     generate_snn_header(layers, input_size, output_size, n_steps, build)
     generate_main_c(layers, input_size, output_size, n_steps, build, quantize, index_bits)
@@ -78,22 +77,71 @@ def _find_single_nir(folder: Path) -> Path:
     return matches[0]
 
 
+def _find_single_input(folder: Path) -> Path:
+    matches = [p for p in (folder / "input.csv", folder / "input.npy") if p.is_file()]
+    if not matches:
+        raise FileNotFoundError(f"no input.csv or input.npy found in {folder}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"both input.csv and input.npy found in {folder}; expected exactly one"
+        )
+    return matches[0]
+
+
+def _load_frames(input_path: Path) -> np.ndarray:
+    """Load an input file as a 2-D int array ``[n_steps, n_features]``.
+
+    ``.csv`` is parsed as one row per timestep. ``.npy`` follows the same shape
+    rules the streamed-input tooling uses: 1-D is rejected (the step vs feature
+    axis is ambiguous), and rank 3+ is flattened to ``[n_steps, -1]`` — axis 0 is
+    always the step axis, and a conv model reshapes the flat row back through its
+    input memref. The baked ``L0_input`` is ``int8``, so fractional values are
+    rejected (quantize first).
+    """
+    if input_path.suffix != ".npy":
+        return np.loadtxt(input_path, delimiter=",", dtype=np.int64, ndmin=2)
+
+    arr = np.load(input_path)
+    if arr.ndim == 1:
+        raise ValueError(
+            f"{input_path.name} is 1-D (shape {arr.shape}); the timestep vs feature "
+            f"axis is ambiguous — reshape to 2-D [n_steps, n_features] "
+            f"([1, N] for a single frame)."
+        )
+    if arr.ndim > 2:
+        flat = arr.reshape(arr.shape[0], -1)
+        print(
+            f"[snn-mlir] {input_path.name} is {arr.ndim}-D {arr.shape}; flattening "
+            f"trailing axes -> {flat.shape} (axis 0 = timesteps)."
+        )
+        arr = flat
+    if not np.all(np.equal(np.mod(arr, 1), 0)):
+        raise ValueError(
+            f"{input_path.name} has fractional values; the baked input is int8 "
+            f"(quantize before export)."
+        )
+    return arr.astype(np.int64)
+
+
 def write_input_header(
-    input_csv: "str | Path",
+    input_path: "str | Path",
     output_dir: "str | Path",
     *,
     expected_cols: "int | None" = None,
 ) -> int:
-    """Bake ``input.csv`` into ``output_dir/input.h`` (``int8_t L0_input[N][C]``).
+    """Bake an input file into ``output_dir/input.h`` (``int8_t L0_input[N][C]``).
 
-    Returns the number of rows ``N`` (= ``n_steps``). Raises if the column count
-    does not match ``expected_cols``.
+    ``input_path`` is an ``input.csv`` (one row per timestep) or an ``input.npy``
+    (2-D ``[n_steps, n_features]``, or higher-rank flattened per
+    :func:`_load_frames`). Returns the number of rows ``N`` (= ``n_steps``).
+    Raises if the per-frame feature count does not match ``expected_cols``.
     """
-    arr = np.loadtxt(input_csv, delimiter=",", dtype=np.int64, ndmin=2)
+    input_path = Path(input_path)
+    arr = _load_frames(input_path)
     n_steps, n_cols = arr.shape
     if expected_cols is not None and n_cols != expected_cols:
         raise ValueError(
-            f"{Path(input_csv).name} has {n_cols} columns but the network "
+            f"{input_path.name} has {n_cols} columns but the network "
             f"expects {expected_cols} inputs"
         )
 
