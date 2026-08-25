@@ -42,18 +42,29 @@ A model folder is exactly two files:
 my_model/
   something.nir     ← exactly one .nir file (any name)
   input.csv         ← one row per timestep, one column per input channel
+                       (or input.npy — see below)
 ```
 
 Rules worth knowing before you hit an error message:
 
 - **Exactly one** `.nir` in the folder — two is an error, zero is an error.
-- `input.csv` has **no header**. Its **row count sets `n_steps`**,
+- **Exactly one input** — `input.csv` *or* `input.npy`; having both is an error.
+- `input.csv` has **no header**. Its **row count sets `n_steps`**, one column per input channel.
+- `input.npy` is an `int8` array shaped `[n_steps, features]` (a 1-D array is rejected; a
+  higher-rank array — e.g. a `[n_steps, C, H, W]` conv input — is flattened per timestep).
 
 Then it is the same command as the example:
 
 ```bash
 uv run snn-mlir run my_model -q
 ```
+
+!!! tip "Models from Synfire"
+    A `.nir` pulled from the [Synfire](https://synfire.dev/) model registry works as input like
+    any other. Synfire ships the **model graph only**, so you provide your own `input.csv` /
+    `input.npy` (and, if you want to validate, your own reference). The bundled
+    [BrailleNN](../examples/brailernn.md) and [N-MNIST CNN](../examples/nmnistcnn.md) examples
+    were obtained this way.
 
 Just want the MLIR for a single `.nir`, with no folder and no C?
 
@@ -135,4 +146,6 @@ emitting MLIR), see the [API reference](../python/api.md).
 
 For a walk-through of a real network — its topology, what the generated files contain, and how
 to read the output — see the examples:
-[SNN Oxford (LAVA-DL)](../examples/snn-oxford.md) and [SNNTorch](../examples/snntorch.md).
+[SNN Oxford (LAVA-DL)](../examples/snn-oxford.md), [SNNTorch](../examples/snntorch.md),
+[BrailleNN (Norse)](../examples/brailernn.md) — a recurrent network — and
+[N-MNIST CNN (Sinabs)](../examples/nmnistcnn.md) — a convolutional one.

@@ -6,8 +6,9 @@ The [Neuromorphic Intermediate Representation (NIR)](https://neuroir.org/) is a
 framework-neutral format for describing spiking and continuous neuron networks as a graph of
 well-defined node types (`Linear`, `Affine`, `LIF`, `CubaLIF`, …). It is the lingua franca that
 lets a model trained in one framework be read by another. By consuming NIR, `snn-mlir` becomes
-**framework-agnostic** for free: any of the [supported simulators](../index.md#supported-simulators)
-that export NIR can target the dialect, instead of us writing a bespoke importer per framework.
+**framework-agnostic** for free: any simulator that exports the
+[supported NIR nodes](../index.md#supported-nir-nodes) can target the dialect, instead of us
+writing a bespoke importer per framework.
 
 !!! note "NIR is broader than MLIR's digital world"
     NIR is designed to describe **both digital and analog** neuron models, using continuous
@@ -85,17 +86,24 @@ Each SNN op covers a family of NIR nodes:
 |---|---|---|
 | `nir.Linear` | `snn.linear` | No bias |
 | `nir.Affine` | `snn.linear` | Bias added as second operand |
+| `nir.Conv2d` | `snn.conv2d` | 2-D convolutional synapse; float + quantized |
+| `nir.Conv1d` | `snn.conv1d` | 1-D convolutional synapse; **float only** (no quantized 1-D conv op yet) |
+| `nir.SumPool2d` | `snn.sumpool2d` | Sum pooling; float + quantized |
+| `nir.AvgPool2d` | `snn.avgpool2d` | Average pooling; float + quantized |
+| `nir.Flatten` | _(reshape)_ | Structural — flattens a feature map to a vector; no dedicated op |
 | `nir.CubaLIF` | `snn.cubalif` | `cur_decay`, `vol_decay` < 1 |
 | `nir.CubaLI` | `snn.cubali` | `cur_decay`, `vol_decay` < 1 |
 | `nir.LIF` | `snn.lif` | `decay` < 1, derived from `tau`/`r` |
 | `nir.IF` | `snn.lif` | `decay = 1.0` by definition; requires `r = 1` |
 | `nir.LI` | `snn.li` | `decay` < 1, derived from `tau`/`r` |
 | `nir.I` | `snn.li` | `decay = 1.0` by definition; requires `r = 1` |
-| _(internal)_ | `snn.rescale` | Inserted between `snn.linear` and neuron ops during quantized export; no NIR equivalent |
+| _(internal)_ | `snn.rescale` | Inserted between a synapse and neuron ops during quantized export; no NIR equivalent |
 
 NIR has no cumulative-current integrate-and-fire node — there is no `nir.CubaIF` or `nir.CubaI`
-— so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts. Eight NIR node
-types map today; the table above is the complete list.
+— so `snn.cubalif`/`snn.cubali` are reachable only from their leaky counterparts. Thirteen NIR
+node types map today; the table above is the complete list. The four neuron families
+(`CubaLIF`/`CubaLI`/`LIF`/`LI`, plus the non-leaky `IF`/`I` pair that reuses `snn.lif`/`snn.li`)
+still collapse to just **four neuron ops** in the dialect.
 
 ## Recurrence
 
@@ -151,14 +159,16 @@ replaced by `_` (`lif1.lif` → `lif1_lif`). Since that mangling can collide (`a
 
 ## Current NIR coverage & pending nodes
 
-The supported set above covers feedforward, fully-connected networks. NIR node types that are
-**not yet mapped** include the convolutional and pooling family:
+The supported set above covers dense and convolutional feedforward networks, plus canonical SNN
+self-recurrence (see [Recurrence](#recurrence)). The NIR primitives **not yet mapped** are:
 
-- `nir.Conv1d` / `nir.Conv2d`
-- `nir.AvgPool2d` / `nir.SumPool2d`
-- `nir.Flatten`, and other spatial/structural nodes
+- `nir.Delay` — a fixed time-delay edge
+- `nir.Scale` — a scalar gain node
+- `nir.Threshold` — a standalone threshold node
 
-<!-- TODO: confirm/extend the exact list of pending NIR nodes you want to advertise -->
+`nir.Conv1d` is mapped for **float only** — there is no quantized 1-D convolution op yet, so a
+`-q` run on a `Conv1d` model is rejected. Branching and residual topologies are also still
+unsupported (only linear chains and the one recurrent cycle above).
 
-Adding one is a contained task — see [Adding a NIR node type](nir-node.md). If the model you
+Adding a node is a contained task — see [Adding a NIR node type](nir-node.md). If the model you
 care about uses an unsupported node, we'd be glad to help; [send us the NIR graph](../contributing.md).

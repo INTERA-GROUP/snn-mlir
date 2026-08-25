@@ -8,8 +8,8 @@ better metrics, docs fixes: all welcome.
 ## Don't have code to contribute? Send us a NIR graph
 
 The fastest way to help us broaden coverage is to **share a NIR graph we can test**. If your
-framework exports to NIR but isn't in our [supported simulators](index.md#supported-simulators)
-table — or uses a node we don't handle yet — send us the `.nir` file (or a small script that
+framework exports to NIR but uses a [node we don't handle yet](index.md#supported-nir-nodes) —
+send us the `.nir` file (or a small script that
 produces it) and we'll test it, fix what's needed, and add it to the suite. No PR required.
 
 ## Submitting changes

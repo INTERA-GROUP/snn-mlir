@@ -6,6 +6,8 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2606.09213-b31b1b.svg)](https://arxiv.org/abs/2606.09213)
 [![Collaboration Network](https://img.shields.io/badge/Collaboration_Network-Open_Neuromorphic-blue)](https://open-neuromorphic.org/)
 
+![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](assets/snn-mlir_flow.png)
+
 An out-of-tree [MLIR](https://mlir.llvm.org/) dialect for Spiking Neural Networks (SNNs),
 compatible with the [NIR (Neuromorphic Intermediate Representation)](https://neuroir.org/) standard.
 
@@ -27,30 +29,49 @@ snn-mlir run     my_model/      # → build/results.csv   (compiled and executed
 
 See the [Quick start](getting-started/quickstart.md).
 
-![snn-mlir compilation flow: NIR → SNN dialect MLIR → LLVM IR → executable](assets/snn-mlir_flow.png)
-
 ---
 
-## Supported simulators
+## Supported NIR nodes
 
-NIR is supported as an export target by a growing list of SNN frameworks. Any of them can in
-principle feed `snn-mlir`; the table below shows which we have **tested end-to-end through the
-MLIR pipeline** and which ship as a runnable example.
+`snn-mlir` consumes [NIR](https://neuroir.org/), so it is **framework-agnostic**: any simulator
+that exports NIR can feed it. What matters is not the simulator but the **node types** the model
+uses. The table below maps every [NIR primitive](https://neuroir.org/docs/primitives/) to its
+support status. See [NIR mapping](python/nir-mapping.md) for the details of each.
 
-| Framework | Exports to NIR | Tested through MLIR | Example |
-|---|:---:|:---:|:---:|
-| [LAVA / lava-dl](https://github.com/lava-nc/lava-dl) | ✅ | ✅ | [SNN Oxford](examples/snn-oxford.md) |
-| [snnTorch](https://github.com/jeshraghian/snntorch/) | ✅ | ✅ | [SNNTorch](examples/snntorch.md) |
-| [hxtorch (BrainScaleS-2)](https://github.com/electronicvisions/hxtorch) | ✅ | — | — |
-| [Nengo](https://nengo.ai/) | ✅ | — | — |
-| [Norse](https://github.com/norse/norse) | ✅ | — | — |
-| [Rockpool](https://rockpool.ai/) | ✅ | — | — |
-| [Sinabs](https://sinabs.readthedocs.io/) | ✅ | — | — |
+| [NIR primitive](https://neuroir.org/docs/primitives/) | Supported | Maps to | Notes |
+|---|:---:|---|---|
+| `Input` / `Output` | ✅ | — | Graph entry/exit, handled implicitly |
+| `Linear` | ✅ | `snn.linear` | No bias |
+| `Affine` | ✅ | `snn.linear` | Bias as second operand |
+| `Conv2d` | ✅ | `snn.conv2d` | Float + quantized |
+| `Conv1d` | ✅ | `snn.conv1d` | **Float only** (no quantized 1-D conv yet) |
+| `SumPool2d` | ✅ | `snn.sumpool2d` | Float + quantized |
+| `AvgPool2d` | ✅ | `snn.avgpool2d` | Float + quantized |
+| `Flatten` | ✅ | — | Structural reshape |
+| `LIF` | ✅ | `snn.lif` | Leaky integrate-and-fire |
+| `LI` | ✅ | `snn.li` | Leaky integrator (no threshold) |
+| `IF` | ✅ | `snn.lif` | Non-leaky (`decay = 1`, requires `r = 1`) |
+| `I` | ✅ | `snn.li` | Non-leaky integrator |
+| `CubaLIF` | ✅ | `snn.cubalif` | Current-based LIF (two states) |
+| `CubaLI` | ✅ | `snn.cubali` | Current-based leaky integrator |
+| `Delay` / `Scale` / `Threshold` | — | — | Not yet mapped |
 
-!!! note "Does your simulator export to NIR but isn't tested here?"
-    We'd love to extend coverage. If your framework writes a NIR graph that `snn-mlir` doesn't
-    yet handle, you are very welcome to **send us the NIR graph** and we'll test it and add
-    support. See [Contributing](contributing.md).
+!!! note "A node your model needs isn't mapped yet?"
+    Adding one is a contained task — see [Adding a NIR node type](python/nir-node.md). If your
+    framework writes a NIR graph `snn-mlir` doesn't yet handle, you are very welcome to **send us
+    the NIR graph** and we'll take a look. See [Contributing](contributing.md).
+
+### Example models, and where they come from
+
+The shipped [examples](examples/snn-oxford.md) are trained in four different simulators — the
+same models feed the same pipeline, which is exactly the point of consuming NIR:
+
+| Example | Simulator | What it exercises |
+|---|---|---|
+| [SNN Oxford](examples/snn-oxford.md) | [LAVA-DL](https://github.com/lava-nc/lava-dl) | A plain feedforward chain of `Linear` synapses and `CubaLIF` neurons — the simplest end-to-end path |
+| [SNNTorch](examples/snntorch.md) | [snnTorch](https://github.com/jeshraghian/snntorch/) | A mix of `Linear`/`Affine` (bias and no-bias) with both `LIF` and `CubaLIF` neurons in one graph |
+| [BrailleNN](examples/brailernn.md) | [Norse](https://github.com/norse/norse) | Canonical SNN self-recurrence — a `CubaLIF` layer feeding a recurrent synapse back onto itself |
+| [N-MNIST CNN](examples/nmnistcnn.md) | [Sinabs](https://sinabs.readthedocs.io/) | Convolutional spiking vision: `Conv2d`, `SumPool2d`, `Flatten` and non-leaky `IF` neurons |
 
 ---
 

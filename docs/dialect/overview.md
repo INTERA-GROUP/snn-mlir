@@ -26,6 +26,10 @@ and to custom hardware tomorrow, reusing the rest of the MLIR ecosystem.
 | Op | States | Output | Summary |
 |---|---|---|---|
 | `snn.linear` | — | `f32`/`i32` | Matrix-vector synapse layer (`weights @ input → output`) |
+| `snn.conv2d` | — | `f32`/`i32` | 2-D convolutional synapse over `[channels, height, width]` maps |
+| `snn.conv1d` | — | `f32` | 1-D convolutional synapse (float only — no quantized 1-D conv yet) |
+| `snn.sumpool2d` | — | `f32`/`i32` | 2-D sum pooling |
+| `snn.avgpool2d` | — | `f32`/`i32` | 2-D average pooling |
 | `snn.rescale` | — | `i32` | Per-edge requantization shift to align quantization scales |
 | `snn.cubalif` | current, voltage | `f32`/`i8` | Current-based leaky integrate-and-fire: two-state dynamics with threshold and voltage reset |
 | `snn.cubali` | current, voltage | `f32`/`i32` | Current-based leaky integrator: two-state dynamics, continuous voltage output (no threshold) |
@@ -46,6 +50,9 @@ can read a layer **uniformly**, without switching on the concrete op type:
 
 - **`SynapseOpInterface`** — implemented by `snn.linear`. Exposes the activation, weight,
   accumulator, and optional bias operands plus the `K`/`N` shape of `accumulator = weights @ input`.
+  The convolutional and pooling ops (`snn.conv2d`/`snn.conv1d`/`snn.sumpool2d`/`snn.avgpool2d`) are
+  standalone — their spatial semantics don't fit the matrix-vector contract, so they do not
+  implement this interface.
 - **`NeuronOpInterface`** — implemented by all four neuron ops (`snn.cubalif` / `snn.lif` /
   `snn.li` / `snn.cubali`). Exposes their operands, fixed-point parameters, and two capability
   predicates (`hasCurrentStage()`, `producesSpike()`) that distinguish the four kinds — so one
@@ -76,7 +83,9 @@ to match on them.
     abstraction we deliberately kept a single, neuromorphics-specific `snn.linear` op rather
     than reusing or merging with `affine`.
 
-!!! warning "1-D activations only"
-    The verifiers require 1-D activation vectors (`memref<Nxf32>` / `memref<Nxi32>`). Feeding a
-    2-D feature map produces a clear verifier error rather than a silent miscompilation. See
-    [Limitations](../limitations.md).
+!!! note "Activations are rank-agnostic"
+    Dense ops (`snn.linear`, the neurons) operate on 1-D activation vectors
+    (`memref<Nxf32>` / `memref<Nxi32>`); the convolutional and pooling ops operate on N-D feature
+    maps (`memref<CxHxWx…>`). The verifiers enforce each op's expected rank, so a shape mismatch
+    is a clear error rather than a silent miscompilation. What is not supported is a **batch**
+    axis — one sample per call. See [Limitations](../limitations.md).

@@ -27,7 +27,7 @@ Three of the CLI verbs are spans of that same path:
 | Verb | Covers |
 |---|---|
 | `snn-mlir export` | `.nir` → `network.mlir` |
-| `snn-mlir codegen` | `.nir` + `input.csv` → `build/` (MLIR **and** C sources) |
+| `snn-mlir codegen` | `.nir` + `input.csv`/`.npy` → `build/` (MLIR **and** C sources) |
 | `snn-mlir run` | everything, ending in `build/results.csv` |
 
 The fourth, `snn-mlir check`, is not a span of the path but a look down it: it applies the

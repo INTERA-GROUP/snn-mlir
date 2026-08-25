@@ -1,5 +1,10 @@
 # SNN Oxford (LAVA-DL)
 
+```mermaid
+graph LR
+    IN([input]) --> L1["Linear 200→256"] --> N1["CubaLIF 256"] --> L2["Linear 256→200"] --> N2["CubaLIF 200"] --> OUT([output])
+```
+
 A complete, end-to-end example: a two-layer CubaLIF network trained with **LAVA-DL** on the
 Oxford spike-train dataset, exported to NIR, and run through `snn-mlir` all the way to a
 compiled binary.

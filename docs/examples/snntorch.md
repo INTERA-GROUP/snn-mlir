@@ -1,5 +1,10 @@
 # SNNTorch
 
+```mermaid
+graph LR
+    IN([input 784]) --> L1["Linear 784→256"] --> N1["LIF 256"] --> L2["Affine 256→10"] --> N2["CubaLIF 10"] --> OUT([output 10])
+```
+
 A second end-to-end example, exported from **[snnTorch](https://github.com/jeshraghian/snntorch/)**.
 Where the [Oxford example](snn-oxford.md) is a real trained model, this one is a **decoy
 network** built to exercise the pipeline: it deliberately mixes different node types and is

@@ -66,5 +66,7 @@ nav:
   - Examples:
       - SNN Oxford (LAVA-DL): examples/snn-oxford.md
       - SNNTorch: examples/snntorch.md
+      - BrailleNN (Norse): examples/brailernn.md
+      - N-MNIST CNN (Sinabs): examples/nmnistcnn.md
   - Limitations: limitations.md
   - Contributing: contributing.md

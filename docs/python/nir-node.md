@@ -3,13 +3,14 @@
 ## Why extend the parsers?
 
 The frontend only knows the NIR node types it has parsers for — everything else raises a clear
-"unsupported type" error. Extending coverage is how the project grows: new neuron models, the
-convolutional/pooling family, or any node your framework emits. We **actively want** these
+"unsupported type" error. Extending coverage is how the project grows: new neuron models, new
+connectivity primitives, or any node your framework emits. We **actively want** these
 contributions, and the design keeps them small and self-contained.
 
-The most valuable additions right now are the **convolutional and pooling nodes** (to lift the
-fully-connected-only limitation) and any neuron variant your hardware needs. If you're unsure
-where to start, [get in touch](../contributing.md) and we'll point you at the right node.
+The most valuable additions right now are the still-unmapped NIR primitives — `nir.Delay`,
+`nir.Scale`, `nir.Threshold` — a **quantized `nir.Conv1d`** path (only the float lane exists
+today), and any neuron variant your hardware needs. If you're unsure where to start,
+[get in touch](../contributing.md) and we'll point you at the right node.
 
 ## How it's structured
 
