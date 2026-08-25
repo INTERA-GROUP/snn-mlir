@@ -66,8 +66,14 @@ class FlattenInfo(NodeInfo):
     ) -> tuple[list[str], str]:
         scalar_t = "i8" if quantize else "f32"
         out_var = f"%flat_{self.name}"
-        in_ty = memref_type(self.in_shape, scalar_t)
-        out_ty = memref_type(self.out_shape, scalar_t)
+        in_shape, out_shape = self.in_shape, self.out_shape
+        if in_shape is None or out_shape is None:
+            raise ValueError(
+                f"Flatten '{self.name}': input shape is unresolved; run shape "
+                f"propagation before emitting MLIR."
+            )
+        in_ty = memref_type(in_shape, scalar_t)
+        out_ty = memref_type(out_shape, scalar_t)
 
         # Reassociation: the folded run [start..end] is one group; every other
         # input dim is a singleton group, so the groups tile all input dims.

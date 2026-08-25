@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import nir
 
-from .nodes import NODE_PARSERS, NodeInfo, RescaleInfo
+from .nodes import NODE_PARSERS, NeuronInfo, NodeInfo, RescaleInfo, SynapseInfo
 
 #: The two by-name graph terminals. The walk starts at ``input`` and stops at
 #: ``output``; neither is parsed into a layer.
@@ -305,7 +305,7 @@ class GraphInfo:
         return [self.nodes[name] for name in self.order]
 
     @property
-    def _entry_synapse(self) -> NodeInfo:
+    def _entry_synapse(self) -> SynapseInfo:
         """The synapse the network input feeds.
 
         The entry node (successor of ``input``) defines it — NOT the first
@@ -314,9 +314,9 @@ class GraphInfo:
         order, as the old list-based consumers did.
         """
         entry = next((dst for src, dst in self.edges if src == "input"), None)
-        entry_layer = self.nodes.get(entry)
-        if entry_layer is None or not entry_layer.is_synapse:
-            entry_layer = next((layer for layer in self if layer.is_synapse), None)
+        entry_layer = self.nodes.get(entry) if entry is not None else None
+        if not isinstance(entry_layer, SynapseInfo):
+            entry_layer = next((layer for layer in self if isinstance(layer, SynapseInfo)), None)
         if entry_layer is None:
             raise ValueError("No synapse (weight) layer found in graph.")
         return entry_layer
@@ -336,7 +336,9 @@ class GraphInfo:
     @property
     def output_size(self) -> int:
         """The network's output width: the last neuron's state size."""
-        last_neuron = next((layer for layer in reversed(self.layers) if layer.is_neuron), None)
+        last_neuron = next(
+            (layer for layer in reversed(self.layers) if isinstance(layer, NeuronInfo)), None
+        )
         if last_neuron is None:
             raise ValueError("No neuron layer found in graph.")
         return last_neuron.state_size
@@ -427,11 +429,11 @@ def _propagate_shapes(
                 for src, dst in topo.edges
                 if dst == name and (src == "input" or src in produced)
             ]
-        incoming = [shape for shape in incoming if shape is not None]
+        shapes = [shape for shape in incoming if shape is not None]
 
-        if incoming:
-            arriving = incoming[0]
-            for other in incoming[1:]:
+        if shapes:
+            arriving = shapes[0]
+            for other in shapes[1:]:
                 if other != arriving:
                     warnings.warn(
                         f"Node '{name}': fan-in branches arrive with different shapes "
@@ -451,14 +453,15 @@ def _propagate_shapes(
                 )
             layer.adopt_in_shape(arriving)
 
-        produced[name] = layer.out_shape
+        out_shape = layer.out_shape
+        produced[name] = out_shape
 
         declared_out = _declared_shape(graph.nodes.get(name), "output")
-        if declared_out is not None and produced[name] is not None:
-            if tuple(produced[name]) != declared_out:
+        if declared_out is not None and out_shape is not None:
+            if tuple(out_shape) != declared_out:
                 warnings.warn(
                     f"Node '{name}': NIR declares output_type {declared_out}, but the "
-                    f"layer produces {tuple(produced[name])}. Using the computed shape "
+                    f"layer produces {tuple(out_shape)}. Using the computed shape "
                     f"— NIR's own shape inference is not authoritative here.",
                     UserWarning,
                     stacklevel=3,
@@ -550,7 +553,12 @@ def insert_rescale_nodes(layers: "list[NodeInfo] | GraphInfo") -> GraphInfo:
     for src, dst in graph.edges:
         syn = graph.nodes.get(src)
         neuron = graph.nodes.get(dst)
-        if syn is None or neuron is None or not syn.is_synapse or not neuron.is_neuron:
+        if not isinstance(syn, SynapseInfo) or not isinstance(neuron, NeuronInfo):
+            edges.append((src, dst))
+            continue
+        # Reached only when quantize=True (the sole caller), so the synapse has
+        # a resolved w_scale; skip defensively if it does not.
+        if syn.w_scale is None:
             edges.append((src, dst))
             continue
         rescale = RescaleInfo(
@@ -581,19 +589,19 @@ def _share_fan_in_w_scales(graph: GraphInfo) -> None:
     Requantization recomputes from the float weights, so this is idempotent.
     """
     for name, layer in graph.nodes.items():
-        if not layer.is_neuron:
+        if not isinstance(layer, NeuronInfo):
             continue
         synapses = [
-            graph.nodes[p]
+            pred
             for p in graph.predecessors(name)
-            if p in graph.nodes and graph.nodes[p].is_synapse
+            if isinstance(pred := graph.nodes.get(p), SynapseInfo)
         ]
         if len(synapses) < 2:
             continue
         scales = [s.w_scale for s in synapses]
         if any(scale is None for scale in scales):
             continue  # not quantized — nothing to share
-        shared = min(scales)
+        shared = min(s for s in scales if s is not None)
         for synapse in synapses:
             if synapse.w_scale != shared:
                 synapse.requantize(shared)

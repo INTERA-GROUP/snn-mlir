@@ -218,8 +218,14 @@ def _emit_linear_int(
 # ── dense literal helpers ───────────────────────────────────────────────────────
 
 
-def _dense_int(arr: np.ndarray) -> str:
-    """Render an int numpy array as a nested MLIR ``dense`` element literal."""
+def _dense_int(arr: np.ndarray | None) -> str:
+    """Render an int numpy array as a nested MLIR ``dense`` element literal.
+
+    ``None`` means the quantized weights/bias were never computed — call
+    ``quantize()`` before emitting the int8 module.
+    """
+    if arr is None:
+        raise ValueError("quantized data is missing; call quantize() first")
     if arr.ndim == 1:
         return "[" + ", ".join(str(int(v)) for v in arr) + "]"
     return "[" + ", ".join(_dense_int(row) for row in arr) + "]"

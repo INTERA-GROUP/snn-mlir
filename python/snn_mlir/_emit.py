@@ -27,7 +27,7 @@ Function-argument order — the positional C ABI contract with any caller
 """
 
 from ._graph import GraphInfo, as_graph_info
-from .nodes import NodeInfo
+from .nodes import NeuronInfo, NodeInfo
 from .nodes._base import memref_type
 
 
@@ -88,6 +88,10 @@ def generate_mlir(layers: "list[NodeInfo] | GraphInfo", quantize: bool) -> str:
         elif len(preds) == 1:
             input_var = var_map[preds[0]]
         else:
+            # A fan-in merge is only defined in front of a neuron (it sizes the
+            # merged accumulator to the neuron's state).
+            if not isinstance(layer, NeuronInfo):
+                raise ValueError(f"Node '{name}': fan-in merge requires a neuron consumer.")
             merge_lines, input_var = _emit_merge(
                 name,
                 [var_map[p] for p in preds],

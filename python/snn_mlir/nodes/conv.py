@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import nir
 import numpy as np
+import numpy.typing as npt
 
 from ._base import SynapseInfo, memref_type, nir_shape
 
@@ -55,7 +56,7 @@ class ConvInfo(SynapseInfo):
         # A conv's output geometry follows its input's spatial dims, so — unlike
         # a dense synapse — it must record what its predecessor produced. The
         # channel count is fixed by the weights; only H, W flow in.
-        self.in_spatial = tuple(shape[1:])
+        self.in_spatial = (shape[1], shape[2])
 
     # ── weight traits ─────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ def parse_conv2d(node: nir.Conv2d, name: str) -> ConvInfo:
     )
 
 
-def _pair(value: object) -> tuple[int, int]:
+def _pair(value: npt.ArrayLike) -> tuple[int, int]:
     """A scalar or length-2 NIR field as a ``(vertical, horizontal)`` pair."""
     arr = np.atleast_1d(value)
     if arr.size == 1:
@@ -233,8 +234,14 @@ def _dense_float(arr: np.ndarray) -> str:
     return "[" + ", ".join(_dense_float(row) for row in arr) + "]"
 
 
-def _dense_int(arr: np.ndarray) -> str:
-    """Render an int numpy array as a nested MLIR ``dense`` element literal."""
+def _dense_int(arr: np.ndarray | None) -> str:
+    """Render an int numpy array as a nested MLIR ``dense`` element literal.
+
+    ``None`` means the quantized weights/bias were never computed — call
+    ``quantize()`` before emitting the int8 module.
+    """
+    if arr is None:
+        raise ValueError("quantized data is missing; call quantize() first")
     if arr.ndim == 1:
         return "[" + ", ".join(str(int(v)) for v in arr) + "]"
     return "[" + ", ".join(_dense_int(row) for row in arr) + "]"

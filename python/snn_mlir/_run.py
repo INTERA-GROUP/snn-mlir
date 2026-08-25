@@ -147,7 +147,19 @@ def resolve_toolchain() -> Toolchain:
         problems.append("  C compiler: install clang or gcc, or set CC")
     if problems:
         raise FileNotFoundError("required toolchain is incomplete:\n" + "\n".join(problems))
-    return Toolchain(**tools)
+
+    def _got(key: str) -> Path:
+        path = tools[key]
+        assert path is not None  # guaranteed non-None by the checks above
+        return path
+
+    return Toolchain(
+        snn_opt=_got("snn_opt"),
+        mlir_opt=_got("mlir_opt"),
+        mlir_translate=_got("mlir_translate"),
+        llc=_got("llc"),
+        cc=_got("cc"),
+    )
 
 
 def run_folder(

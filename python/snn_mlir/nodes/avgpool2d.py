@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import nir
 import numpy as np
+import numpy.typing as npt
 
 from ._base import NodeInfo, memref_type, nir_shape
 
@@ -98,7 +99,7 @@ def parse_avgpool2d(node: nir.AvgPool2d, name: str) -> AvgPool2dInfo:
     )
 
 
-def _pair(value: object) -> tuple[int, int]:
+def _pair(value: npt.ArrayLike) -> tuple[int, int]:
     """A scalar or length-2 NIR field as a ``(vertical, horizontal)`` pair."""
     arr = np.atleast_1d(value)
     if arr.size == 1:

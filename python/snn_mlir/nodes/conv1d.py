@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import nir
 import numpy as np
+import numpy.typing as npt
 
 from ._base import SynapseInfo, memref_type, nir_shape
 from .conv import _dense_float, _dense_int
@@ -212,6 +213,6 @@ def parse_conv1d(node: nir.Conv1d, name: str) -> Conv1dInfo:
     )
 
 
-def _scalar(value: object) -> int:
+def _scalar(value: npt.ArrayLike) -> int:
     """A scalar or length-1 NIR spatial field as a plain int."""
     return int(np.atleast_1d(value).flat[0])

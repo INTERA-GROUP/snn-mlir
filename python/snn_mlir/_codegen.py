@@ -23,7 +23,7 @@ from ._api import export as export_mlir
 from ._api import parse_graph, quantize_layers
 from ._cname import ensure_unique_c_names
 from ._graph import GraphInfo, as_graph_info
-from .nodes import NodeInfo
+from .nodes import NeuronInfo, NodeInfo
 
 
 def codegen_folder(
@@ -159,7 +159,7 @@ def write_input_header(
 
 
 def generate_snn_header(
-    layers: list[NodeInfo],
+    layers: "list[NodeInfo] | GraphInfo",
     input_size: int,
     output_size: int,
     n_steps: int,
@@ -179,7 +179,7 @@ def generate_snn_header(
         "",
     ]
     for layer in layers:
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             lines.append(f"#define {layer.state_size_define} {layer.state_size}")
     lines += [
         "",
@@ -238,7 +238,7 @@ def generate_main_c(
     # ── main ──────────────────────────────────────────────────────────────────
     L.append("int main(void) {")
 
-    last_neuron = next((layer for layer in reversed(layers) if layer.is_neuron), None)
+    last_neuron = next((layer for layer in reversed(layers) if isinstance(layer, NeuronInfo)), None)
     input_shape = graph.input_shape
     in_rank = len(input_shape)
     out_ctype = _out_ctype(last_neuron, quantize)
@@ -255,7 +255,7 @@ def generate_main_c(
     spk_t = "int8_t" if quantize else "float"
     for name in graph.order:
         layer = graph.nodes[name]
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             for sname in layer.state_names:
                 L.append(
                     f"    {s_t} {sname}_{layer.c_name}[{layer.state_size_define}] = {{0}};",
@@ -284,7 +284,7 @@ def generate_main_c(
     spk_ctype = "int8_t" if quantize else "float"
     for name in graph.order:
         layer = graph.nodes[name]
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             rank = len(layer.out_shape)
             for sname in layer.state_names:
                 L.append(
@@ -316,7 +316,7 @@ def generate_main_c(
     call_args = ["&in_desc"]
     for name in graph.order:
         layer = graph.nodes[name]
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             for sname in layer.state_names:
                 call_args.append(f"&{sname[0]}{layer.c_name}_desc")
         if name in recurrent_neurons:
@@ -396,12 +396,12 @@ def _descriptor_types(graph: GraphInfo, quantize: bool) -> list[tuple[int, str]]
     in_ct = "int8_t" if quantize else "float"
     s_ct = "int32_t" if quantize else "float"
     spk_ct = "int8_t" if quantize else "float"
-    last_neuron = next((lay for lay in reversed(graph.layers) if lay.is_neuron), None)
+    last_neuron = next((lay for lay in reversed(graph.layers) if isinstance(lay, NeuronInfo)), None)
 
     pairs: list[tuple[int, str]] = [(len(graph.input_shape), in_ct)]
     for name in graph.order:
         layer = graph.nodes[name]
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             for _sname in layer.state_names:
                 pairs.append((len(layer.out_shape), s_ct))
             if name in recurrent:
@@ -434,7 +434,9 @@ def _memref_typedef(name: str, elem_t: str, rank: int, idx_t: str) -> list[str]:
 def _extern_signature(graph: GraphInfo, idx_t: str, quantize: bool) -> list[str]:
     """The kernel's positional C ABI. Each pointer's descriptor rank matches its
     buffer's shape (rank-3 for a conv feature map, rank-1 for a dense vector)."""
-    last_neuron = next((layer for layer in reversed(graph.layers) if layer.is_neuron), None)
+    last_neuron = next(
+        (layer for layer in reversed(graph.layers) if isinstance(layer, NeuronInfo)), None
+    )
     recurrent_neurons = {neuron for neuron, _synapse in graph.recurrent_edges}
     s_ctype = "int32_t" if quantize else "float"
     spk_ctype = "int8_t" if quantize else "float"
@@ -450,7 +452,7 @@ def _extern_signature(graph: GraphInfo, idx_t: str, quantize: bool) -> list[str]
     args = [f"{in_t} *input"]
     for name in graph.order:
         layer = graph.nodes[name]
-        if layer.is_neuron:
+        if isinstance(layer, NeuronInfo):
             rank = len(layer.out_shape)
             for sname in layer.state_names:
                 args.append(f"{_desc_name(rank, s_ctype)} *{sname}_{layer.c_name}")

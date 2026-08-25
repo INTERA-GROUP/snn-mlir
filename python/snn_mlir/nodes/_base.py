@@ -102,7 +102,7 @@ class NodeInfo(ABC):
     # ── weight traits (synapse layers) ────────────────────────────────────────
 
     @property
-    def weight_shape(self) -> tuple[int, int] | None:
+    def weight_shape(self) -> tuple[int, ...] | None:
         return None
 
     @property
@@ -218,6 +218,20 @@ class NeuronInfo(NodeInfo):
         # Shape-preserving: the neuron takes whatever its predecessor produced.
         self.shape = shape
 
+    # A neuron always carries state and a Q-format; concrete neurons supply
+    # these, so the role base narrows them from the NodeInfo Optionals.
+    @property
+    @abstractmethod
+    def state_size(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def state_size_define(self) -> str: ...
+
+    @property
+    @abstractmethod
+    def d_scale(self) -> int: ...
+
 
 @dataclass
 class SynapseInfo(NodeInfo):
@@ -231,6 +245,16 @@ class SynapseInfo(NodeInfo):
     @property
     def is_synapse(self) -> bool:
         return True
+
+    # A synapse's weights fix both ends, so its shapes are always known;
+    # concrete synapses supply them, narrowing the NodeInfo Optionals.
+    @property
+    @abstractmethod
+    def in_shape(self) -> tuple[int, ...]: ...
+
+    @property
+    @abstractmethod
+    def out_shape(self) -> tuple[int, ...]: ...
 
     @abstractmethod
     def requantize(self, w_scale: int) -> None:
