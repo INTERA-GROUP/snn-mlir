@@ -19,20 +19,19 @@ per-node behavior — quantization, MLIR emission, classification traits — liv
 
 ### 1. Create a `NodeInfo` subclass
 
+Subclass the base that matches the node's role: `NeuronInfo` for a state-carrying
+neuron, `SynapseInfo` for a weight-carrying layer, or `NodeInfo` directly for a
+shape-only node (reshape, pooling) that is neither.
+
 ```python
-from snn_mlir.nodes import NodeInfo
+from snn_mlir.nodes import NeuronInfo
 from dataclasses import dataclass
 
 @dataclass
-class MyNodeInfo(NodeInfo):
-    name: str
-    size: int
-
-    # Classification traits are read-only properties on NodeInfo; override
-    # the ones that apply (they default to False on the base class).
-    @property
-    def is_neuron(self) -> bool:
-        return True
+class MyNeuronInfo(NeuronInfo):
+    # NeuronInfo already carries `name` and `shape` and sets is_neuron = True;
+    # add the node's own parameters and implement its abstract members.
+    decay_int: int
 
     # Override quantize() if the node has quantizable parameters (no-op by
     # default). Called once per layer before MLIR emission in quantized mode.
@@ -44,9 +43,13 @@ class MyNodeInfo(NodeInfo):
         ...
 ```
 
-The `is_synapse` / `is_neuron` traits are what let graph-level logic (such as automatic
-`snn.rescale` insertion) work without `isinstance` checks — so set them correctly and new node
-types are handled by existing machinery automatically.
+The `is_synapse` / `is_neuron` traits are the classification vocabulary graph logic
+branches on — but they are overridden *only* on the two role bases, so the way to set
+them correctly is to extend the matching base rather than flip a flag by hand. The pure
+topological walk (shape propagation) branches on the flags; consumers that then reach for
+a role-specific member (a neuron's `state_size`, a synapse's `requantize`) narrow with an
+`isinstance` check against the role base, which is why a neuron/synapse node must subclass
+it. Get the base right and new node types are handled by existing machinery automatically.
 
 ### 2. Write a parser function
 

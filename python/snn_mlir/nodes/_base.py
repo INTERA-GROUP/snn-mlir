@@ -46,10 +46,12 @@ def memref_type(shape: tuple[int, ...], elem: str) -> str:
 class NodeInfo(ABC):
     """Base class for parsed NIR nodes.
 
-    Trait properties default to False / None so graph-level logic can branch on
-    ``is_synapse`` / ``is_neuron`` without isinstance checks, keeping the graph
-    walker independent of concrete node types. ``NeuronInfo`` and ``SynapseInfo``
-    specialise the two roles.
+    Trait properties default to False / None so the topological walk (shape
+    propagation) can branch on ``is_synapse`` / ``is_neuron`` without knowing the
+    concrete node types. ``NeuronInfo`` and ``SynapseInfo`` specialise the two
+    roles and override the flags; a consumer that then reaches for a role-specific
+    member (``state_size``, ``requantize``) narrows with an ``isinstance`` check
+    against the role base, so those flags and the role bases stay in lock-step.
     """
 
     name: str
