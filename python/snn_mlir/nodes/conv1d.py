@@ -116,16 +116,14 @@ class Conv1dInfo(SynapseInfo):
             w_ty = memref_type(self.weight_shape, "f32")
             w_lit = _dense_float(self.weights)
         lines = [
-            f'  memref.global "private" constant @w_{self.name}'
-            f" : {w_ty} = dense<{w_lit}>",
+            f'  memref.global "private" constant @w_{self.name} : {w_ty} = dense<{w_lit}>',
         ]
         if self.bias is not None:
             b_elem = "i32" if quantize else "f32"
             b_lit = _dense_int(self.int32_bias) if quantize else _dense_float(self.bias)
             b_ty = memref_type((self.out_channels,), b_elem)
             lines.append(
-                f'  memref.global "private" constant @b_{self.name}'
-                f" : {b_ty} = dense<{b_lit}>",
+                f'  memref.global "private" constant @b_{self.name} : {b_ty} = dense<{b_lit}>',
             )
         return lines
 

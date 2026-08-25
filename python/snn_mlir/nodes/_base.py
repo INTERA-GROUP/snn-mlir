@@ -36,8 +36,7 @@ def memref_type(shape: tuple[int, ...], elem: str) -> str:
     """
     if not shape:
         raise ValueError(
-            "memref_type needs at least one dimension; a rank-0 memref carries "
-            "no layer shape.",
+            "memref_type needs at least one dimension; a rank-0 memref carries no layer shape.",
         )
     dims = "x".join(str(int(d)) for d in shape)
     return f"memref<{dims}x{elem}>"
@@ -232,3 +231,12 @@ class SynapseInfo(NodeInfo):
     @property
     def is_synapse(self) -> bool:
         return True
+
+    @abstractmethod
+    def requantize(self, w_scale: int) -> None:
+        """Re-quantize weights (and bias) at an externally chosen ``w_scale``.
+
+        Fan-in synapses feeding one neuron are clamped to a shared scale
+        (see ``_share_fan_in_w_scales``); each recomputes from its float weights,
+        so calling this repeatedly is safe.
+        """

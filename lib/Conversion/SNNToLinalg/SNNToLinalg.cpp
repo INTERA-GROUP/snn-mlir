@@ -44,8 +44,7 @@ static Value zeroOf(OpBuilder &b, Location loc, Type elem) {
 //  their iteration space is just the operand shape: one identity map per
 //  operand, one parallel iterator per dimension. Deriving both from the operand
 //  rank is what lets a dense layer's vector and a conv layer's feature map share
-//  a single lowering. At rank 1 these reproduce the previous
-//  getDimIdentityMap() output exactly.
+//  a single lowering.
 //===----------------------------------------------------------------------===//
 static SmallVector<AffineMap> identityMaps(OpBuilder &b, Value operand,
                                            unsigned numOperands) {

@@ -82,9 +82,7 @@ def _find_single_input(folder: Path) -> Path:
     if not matches:
         raise FileNotFoundError(f"no input.csv or input.npy found in {folder}")
     if len(matches) > 1:
-        raise ValueError(
-            f"both input.csv and input.npy found in {folder}; expected exactly one"
-        )
+        raise ValueError(f"both input.csv and input.npy found in {folder}; expected exactly one")
     return matches[0]
 
 
@@ -141,8 +139,7 @@ def write_input_header(
     n_steps, n_cols = arr.shape
     if expected_cols is not None and n_cols != expected_cols:
         raise ValueError(
-            f"{input_path.name} has {n_cols} columns but the network "
-            f"expects {expected_cols} inputs"
+            f"{input_path.name} has {n_cols} columns but the network expects {expected_cols} inputs"
         )
 
     lines = [
@@ -244,7 +241,6 @@ def generate_main_c(
     last_neuron = next((layer for layer in reversed(layers) if layer.is_neuron), None)
     input_shape = graph.input_shape
     in_rank = len(input_shape)
-    in_ctype = "int8_t" if quantize else "float"
     out_ctype = _out_ctype(last_neuron, quantize)
     out_shape = last_neuron.out_shape if last_neuron else (output_size,)
     out_rank = len(out_shape)
@@ -296,9 +292,10 @@ def generate_main_c(
                     f" = {_mk_call(rank, s_ctype, f'{sname}_{layer.c_name}', layer.out_shape)};",
                 )
             if name in recurrent_neurons:
+                spk_buf = f"prev_spikes_{layer.c_name}"
                 L.append(
                     f"    {_desc_name(rank, spk_ctype)} prev_{layer.c_name}_desc"
-                    f" = {_mk_call(rank, spk_ctype, f'prev_spikes_{layer.c_name}', layer.out_shape)};",
+                    f" = {_mk_call(rank, spk_ctype, spk_buf, layer.out_shape)};",
                 )
     L.append("")
 

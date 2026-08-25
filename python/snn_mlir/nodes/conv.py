@@ -120,16 +120,14 @@ class ConvInfo(SynapseInfo):
             w_ty = memref_type(self.weight_shape, "f32")
             w_lit = _dense_float(self.weights)
         lines = [
-            f'  memref.global "private" constant @w_{self.name}'
-            f" : {w_ty} = dense<{w_lit}>",
+            f'  memref.global "private" constant @w_{self.name} : {w_ty} = dense<{w_lit}>',
         ]
         if self.bias is not None:
             b_elem = "i32" if quantize else "f32"
             b_lit = _dense_int(self.int32_bias) if quantize else _dense_float(self.bias)
             b_ty = memref_type((self.out_channels,), b_elem)
             lines.append(
-                f'  memref.global "private" constant @b_{self.name}'
-                f" : {b_ty} = dense<{b_lit}>",
+                f'  memref.global "private" constant @b_{self.name} : {b_ty} = dense<{b_lit}>',
             )
         return lines
 
@@ -189,8 +187,7 @@ def parse_conv2d(node: nir.Conv2d, name: str) -> ConvInfo:
     dilation = np.atleast_1d(node.dilation)
     if not np.all(dilation == 1):
         raise ValueError(
-            f"Conv2d '{name}': dilation = {tuple(int(d) for d in dilation)} != 1 is not "
-            "supported.",
+            f"Conv2d '{name}': dilation = {tuple(int(d) for d in dilation)} != 1 is not supported.",
         )
     groups = int(getattr(node, "groups", 1))
     if groups != 1:

@@ -175,7 +175,7 @@ def SNN_Conv1dOp : SNN_Op<"conv1d"> {
 //
 // Sum pooling is scale-preserving, so no rescale follows it. The quantized
 // element contract is i8 -> i8: a 2x2 window of 0/1 spikes sums to 0..4, still
-// a valid int8 (Session 5 lowers it; this session lowers float only).
+// a valid int8.
 
 def SNN_SumPool2dOp : SNN_Op<"sumpool2d"> {
   let summary = "2-D sum pooling layer";
