@@ -125,16 +125,33 @@ def test_no_bias_emits_no_bias_operand():
     assert "bias(" not in "\n".join(lines)
 
 
-def test_quantized_path_is_not_implemented_yet():
-    info = parse_conv1d(_conv_node(), "c0")
-    with pytest.raises(NotImplementedError):
-        info.emit_mlir("%input", is_last=False, quantize=True)
+def test_quantize_sets_int8_weights_and_w_scale():
+    info = parse_conv1d(_conv_node(C=2, OC=4, K=3), "c0")
+    info.quantize()
+    assert isinstance(info.w_scale, int)
+    assert info.w_scale <= 12  # clamped to the neuron Q-format
+    assert info.int8_weights.dtype == np.int8
+    assert info.int8_weights.shape == (4, 2, 3)
+    assert info.int32_bias.dtype == np.int32
 
 
-def test_quantized_weight_globals_are_not_implemented_yet():
-    info = parse_conv1d(_conv_node(), "c0")
-    with pytest.raises(NotImplementedError):
-        info.weight_globals(quantize=True)
+def test_weight_globals_quantized_are_i8_and_i32():
+    info = parse_conv1d(_conv_node(C=2, OC=4, K=3), "c0")
+    info.quantize()
+    globs = "\n".join(info.weight_globals(quantize=True))
+    assert "@w_c0 : memref<4x2x3xi8>" in globs
+    assert "@b_c0 : memref<4xi32>" in globs
+
+
+def test_emits_quantized_snn_conv1d_with_w_scale():
+    info = parse_conv1d(_conv_node(C=2, OC=4, K=3, L=6, stride=2, padding=1), "c0")
+    info.quantize()
+    lines, _ = info.emit_mlir("%input", is_last=False, quantize=True)
+    text = "\n".join(lines)
+    assert f"w_scale = {info.w_scale} : i64" in text
+    # (6+2-3)/2 + 1 = 3
+    assert "memref<2x6xi8>, memref<4x2x3xi8> -> memref<4x3xi32>" in text
+    assert "bias(%b_c0 : memref<4xi32>)" in text
 
 
 # ── the N-D C ABI: a conv1d entry makes the whole kernel signature rank-2 ──────

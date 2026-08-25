@@ -288,11 +288,16 @@ struct LowerConv2d : public OpRewritePattern<snn::Conv2dOp> {
 
 //===----------------------------------------------------------------------===//
 //  Pattern: snn.conv1d → linalg.conv_1d_ncw_fcw (float)
+//                      → linalg.conv_2d_nchw_fchw_q (quantized, 2-D embed)
 //
-//  The 1-D analogue of LowerConv2d: rank-2 [C, L] activations are bracketed
-//  with a unit-batch memref.expand_shape so the named rank-3 conv applies,
-//  padding is materialized explicitly (valid-conv only), and an optional
-//  per-output-channel bias is broadcast over the spatial dimension.
+//  The 1-D analogue of LowerConv2d: padding is materialized explicitly
+//  (valid-conv only) and an optional per-output-channel bias is broadcast over
+//  the spatial dimension. The float path brackets the rank-2 [C, L] activations
+//  with a unit-batch memref.expand_shape so the named rank-3 conv_1d applies.
+//  There is no quantized rank-3 named conv, so the quantized path instead embeds
+//  the 1-D convolution in a 2-D one with a unit width axis — [C, L] → [1,C,L,1],
+//  weights [O,C,K] → [O,C,K,1] — and reuses conv_2d_nchw_fchw_q with a unit W
+//  kernel and stride. The [1,O,Lo,1] result aliases the rank-2 output buffer.
 //===----------------------------------------------------------------------===//
 struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -304,26 +309,24 @@ struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
     Value weights = op.getWeights();
     Value output = op.getOutput();
 
-    if (!isFloatMemRef(input))
-      return rewriter.notifyMatchFailure(
-          op, "only the float conv1d lowering is implemented");
-
     auto inTy = cast<MemRefType>(input.getType());
-    Type elemTy = inTy.getElementType();
+    auto outTy = cast<MemRefType>(output.getType());
+    Type inElem = inTy.getElementType();   // f32 or i8
+    Type outElem = outTy.getElementType(); // f32 or i32
+    bool quant = !isFloatMemRef(input);
     int64_t C = inTy.getDimSize(0), L = inTy.getDimSize(1);
 
     int64_t stride = op.getStride();
     int64_t pad = op.getPadding();
 
     // ── materialize padding (valid-conv only), else convolve the input ────────
+    // Padding with 0 is correct in both modes: 0 is the symmetric zero-point.
     Value convInput = input;
     if (pad != 0) {
       int64_t Lp = L + 2 * pad;
-      auto padTy = MemRefType::get({C, Lp}, elemTy);
+      auto padTy = MemRefType::get({C, Lp}, inElem);
       Value padded = memref::AllocaOp::create(rewriter, loc, padTy);
-      Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                              rewriter.getFloatAttr(elemTy, 0.0));
-      linalg::FillOp::create(rewriter, loc, fzero, padded);
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, inElem), padded);
       // Copy the real input into the [0:C, pad:pad+L] interior.
       Value interior = memref::SubViewOp::create(
           rewriter, loc, padded,
@@ -334,32 +337,69 @@ struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
       convInput = padded;
     }
 
-    // ── bracket with the unit batch dimension the named conv wants ────────────
-    // reassociation [[0,1],[2]]: batch is folded onto the channel axis.
-    SmallVector<ReassociationIndices> reassoc = {{0, 1}, {2}};
-    auto conv3dTy = [&](Value v) {
-      auto t = cast<MemRefType>(v.getType());
-      return MemRefType::get({1, t.getDimSize(0), t.getDimSize(1)}, elemTy);
-    };
-    Value in3d = memref::ExpandShapeOp::create(rewriter, loc, conv3dTy(convInput),
-                                               convInput, reassoc);
-    Value out3d = memref::ExpandShapeOp::create(rewriter, loc, conv3dTy(output),
-                                                output, reassoc);
-
-    // conv_1d_ncw_fcw accumulates into its output, so zero it first.
-    Value fzero = arith::ConstantOp::create(rewriter, loc, elemTy,
-                                            rewriter.getFloatAttr(elemTy, 0.0));
-    linalg::FillOp::create(rewriter, loc, fzero, out3d);
-
     auto i64Vec = [&](ArrayRef<int64_t> v) {
       return rewriter.getI64TensorAttr(v);
     };
-    linalg::Conv1DNcwFcwOp::create(
-        rewriter, loc, TypeRange{}, ValueRange{in3d, weights},
-        ValueRange{out3d},
-        /*strides=*/i64Vec({stride}), /*dilations=*/i64Vec({1}));
+
+    if (quant) {
+      // Embed in 2-D with a trailing unit width axis (see the header note).
+      // reassociation [[0,1],[2,3]] on activations: [1,C] and [L,1] fold onto
+      // the source [C, L]; [[0],[1],[2,3]] on weights adds the unit Kw.
+      SmallVector<ReassociationIndices> actReassoc = {{0, 1}, {2, 3}};
+      SmallVector<ReassociationIndices> wReassoc = {{0}, {1}, {2, 3}};
+      auto ct = cast<MemRefType>(convInput.getType());
+      auto embedTy = [&](Value v, ArrayRef<int64_t> shape) {
+        return MemRefType::get(shape,
+                               cast<MemRefType>(v.getType()).getElementType());
+      };
+      Value in4d = memref::ExpandShapeOp::create(
+          rewriter, loc,
+          embedTy(convInput, {1, ct.getDimSize(0), ct.getDimSize(1), 1}),
+          convInput, actReassoc);
+      auto wt = cast<MemRefType>(weights.getType());
+      Value w4d = memref::ExpandShapeOp::create(
+          rewriter, loc,
+          embedTy(weights, {wt.getDimSize(0), wt.getDimSize(1), wt.getDimSize(2),
+                            1}),
+          weights, wReassoc);
+      Value out4d = memref::ExpandShapeOp::create(
+          rewriter, loc,
+          embedTy(output, {1, outTy.getDimSize(0), outTy.getDimSize(1), 1}),
+          output, actReassoc);
+
+      // The named conv accumulates into its output, so zero it first.
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, outElem), out4d);
+      // Symmetric quantization: both zero-points are 0.
+      Value izp = zeroOf(rewriter, loc, rewriter.getI32Type());
+      Value kzp = zeroOf(rewriter, loc, rewriter.getI32Type());
+      linalg::Conv2DNchwFchwQOp::create(
+          rewriter, loc, TypeRange{}, ValueRange{in4d, w4d, izp, kzp},
+          ValueRange{out4d},
+          /*strides=*/i64Vec({stride, 1}), /*dilations=*/i64Vec({1, 1}));
+    } else {
+      // ── bracket with the unit batch dimension the named conv wants ──────────
+      // reassociation [[0,1],[2]]: batch is folded onto the channel axis.
+      SmallVector<ReassociationIndices> reassoc = {{0, 1}, {2}};
+      auto conv3dTy = [&](Value v) {
+        auto t = cast<MemRefType>(v.getType());
+        return MemRefType::get({1, t.getDimSize(0), t.getDimSize(1)},
+                               t.getElementType());
+      };
+      Value in3d = memref::ExpandShapeOp::create(
+          rewriter, loc, conv3dTy(convInput), convInput, reassoc);
+      Value out3d = memref::ExpandShapeOp::create(rewriter, loc, conv3dTy(output),
+                                                  output, reassoc);
+
+      // conv_1d_ncw_fcw accumulates into its output, so zero it first.
+      linalg::FillOp::create(rewriter, loc, zeroOf(rewriter, loc, outElem), out3d);
+      linalg::Conv1DNcwFcwOp::create(
+          rewriter, loc, TypeRange{}, ValueRange{in3d, weights},
+          ValueRange{out3d},
+          /*strides=*/i64Vec({stride}), /*dilations=*/i64Vec({1}));
+    }
 
     // ── optional per-output-channel bias, broadcast over L ────────────────────
+    // Quantized bias is i32 (same scale as the MAC accumulator).
     Value bias = op.getBias();
     if (bias) {
       MLIRContext *ctx = rewriter.getContext();
@@ -373,7 +413,8 @@ struct LowerConv1d : public OpRewritePattern<snn::Conv1dOp> {
           biasMaps, biasIter,
           [&](OpBuilder &b, Location loc, ValueRange args) {
             Value bval = args[0], acc = args[1];
-            Value sum = arith::AddFOp::create(b, loc, acc, bval);
+            Value sum = quant ? arith::AddIOp::create(b, loc, acc, bval).getResult()
+                              : arith::AddFOp::create(b, loc, acc, bval).getResult();
             linalg::YieldOp::create(b, loc, sum);
           });
     }
